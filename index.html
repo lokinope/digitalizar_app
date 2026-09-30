@@ -1,0 +1,2744 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="h-full bg-slate-50 text-slate-800">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#2563eb" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <title>DocScan Pro - Digitalizador e Gerador de PDFs</title>
+  
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='100' fill='%232563eb'/><rect x='120' y='100' width='272' height='312' rx='20' fill='%23ffffff'/><line x1='80' y1='256' x2='432' y2='256' stroke='%2338bdf8' stroke-width='16' stroke-linecap='round'/></svg>" />
+
+  <!-- Tailwind CSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eff6ff',
+              100: '#dbeafe',
+              200: '#bfdbfe',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+              800: '#1e40af',
+              900: '#1e3a8a',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+
+  <!-- jsPDF & JSZip for local client-side PDF generation and ZIP archiving -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+  <!-- Google Identity Services (optional client-side OAuth for direct Drive API upload) -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+
+  <!-- Custom Styles -->
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+    :root {
+      --primary-color: #2563eb;
+      --primary-hover: #1d4ed8;
+      --accent-color: #059669;
+    }
+
+    body {
+      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    code, .font-mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+
+    /* Document Viewfinder Overlay in Camera */
+    .viewfinder-frame {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 85%;
+      height: 75%;
+      max-width: 480px;
+      border: 2px dashed rgba(255, 255, 255, 0.7);
+      border-radius: 12px;
+      box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
+      pointer-events: none;
+    }
+
+    .viewfinder-corner {
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      border-color: #3b82f6;
+      border-style: solid;
+    }
+
+    .viewfinder-corner.tl {
+      top: -2px;
+      left: -2px;
+      border-width: 4px 0 0 4px;
+      border-top-left-radius: 8px;
+    }
+
+    .viewfinder-corner.tr {
+      top: -2px;
+      right: -2px;
+      border-width: 4px 4px 0 0;
+      border-top-right-radius: 8px;
+    }
+
+    .viewfinder-corner.bl {
+      bottom: -2px;
+      left: -2px;
+      border-width: 0 0 4px 4px;
+      border-bottom-left-radius: 8px;
+    }
+
+    .viewfinder-corner.br {
+      bottom: -2px;
+      right: -2px;
+      border-width: 0 4px 4px 0;
+      border-bottom-right-radius: 8px;
+    }
+
+    /* Scanning Light Bar Animation */
+    @keyframes scan-line {
+      0% { top: 2%; opacity: 0.8; }
+      50% { opacity: 1; }
+      100% { top: 98%; opacity: 0.8; }
+    }
+
+    .scanning-bar {
+      position: absolute;
+      left: 2%;
+      right: 2%;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, #38bdf8, #2563eb, #38bdf8, transparent);
+      box-shadow: 0 0 12px #38bdf8;
+      animation: scan-line 2.5s ease-in-out infinite alternate;
+    }
+
+    /* Shutter button effect */
+    .shutter-btn {
+      transition: transform 0.1s ease, box-shadow 0.1s ease;
+    }
+    .shutter-btn:active {
+      transform: scale(0.92);
+    }
+
+    /* Page card drag & hover effects */
+    .page-thumbnail-card {
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .page-thumbnail-card:hover {
+      transform: translateY(-2px);
+    }
+
+    /* Toast Notifications */
+    .toast-enter {
+      animation: toast-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    .toast-exit {
+      animation: toast-out 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    @keyframes toast-in {
+      from { opacity: 0; transform: translateY(20px) scale(0.95); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    @keyframes toast-out {
+      from { opacity: 1; transform: translateY(0) scale(1); }
+      to { opacity: 0; transform: translateY(20px) scale(0.95); }
+    }
+
+    /* Floating Batch Action Bar */
+    .batch-bar-enter {
+      animation: batch-slide-up 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    @keyframes batch-slide-up {
+      from { opacity: 0; transform: translate(-50%, 30px); }
+      to { opacity: 1; transform: translate(-50%, 0); }
+    }
+
+    .safe-bottom {
+      padding-bottom: env(safe-area-inset-bottom, 16px);
+    }
+    .safe-top {
+      padding-top: env(safe-area-inset-top, 0px);
+    }
+  </style>
+</head>
+<body class="min-h-full flex flex-col bg-slate-50 antialiased select-none pb-20 md:pb-6">
+
+  <!-- ========================================== -->
+  <!-- Top Navigation Bar                         -->
+  <!-- ========================================== -->
+  <header class="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs">
+    <div class="max-w-5xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+      
+      <!-- Brand Logo -->
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-700 to-blue-500 text-white flex items-center justify-center shadow-md shadow-blue-500/20">
+          <i data-lucide="scan" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <h1 class="text-lg font-bold tracking-tight text-slate-900 leading-tight">DocScan <span class="text-blue-600">Pro</span></h1>
+          <p class="text-[11px] text-slate-500 font-medium">Digitalização & Gerador de PDFs</p>
+        </div>
+      </div>
+
+      <!-- Desktop Navigation Tabs -->
+      <nav class="hidden md:flex items-center gap-1 border-b-2 border-transparent">
+        <button data-tab-target="scan" class="flex items-center gap-2 px-4 py-5 text-sm font-semibold text-blue-600 border-b-2 border-blue-600 transition">
+          <i data-lucide="camera" class="w-4 h-4"></i> Digitalizar
+        </button>
+        <button data-tab-target="files" class="flex items-center gap-2 px-4 py-5 text-sm font-medium text-slate-600 border-b-2 border-transparent hover:text-slate-900 transition relative">
+          <i data-lucide="folder-check" class="w-4 h-4"></i> Arquivos Salvos
+          <span class="badge-saved-files-count hidden ml-1 px-2 py-0.5 text-xs font-semibold bg-blue-100 text-blue-700 rounded-full">0</span>
+        </button>
+        <button data-tab-target="settings" class="flex items-center gap-2 px-4 py-5 text-sm font-medium text-slate-600 border-b-2 border-transparent hover:text-slate-900 transition">
+          <i data-lucide="settings" class="w-4 h-4"></i> Configurações & Drive
+        </button>
+      </nav>
+
+      <!-- Quick Action / Status -->
+      <div class="flex items-center gap-2">
+        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200/60">
+          <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          100% Client-side
+        </span>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- ========================================== -->
+  <!-- Main Application Content Area              -->
+  <!-- ========================================== -->
+  <main class="flex-1 max-w-5xl w-full mx-auto px-3 sm:px-6 py-4 sm:py-6">
+
+    <!-- ========================================== -->
+    <!-- TAB 1: DIGITALIZAR & GERAR PDF             -->
+    <!-- ========================================== -->
+    <section data-tab-content="scan" class="space-y-6">
+
+      <!-- Step 1: Captura de Imagens -->
+      <div class="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
+        <div class="px-5 py-4 bg-slate-50/80 border-b border-slate-200/80 flex items-center justify-between flex-wrap gap-2">
+          <div class="flex items-center gap-2.5">
+            <span class="w-7 h-7 rounded-full bg-blue-600 text-white font-bold text-xs flex items-center justify-center shadow-xs">1</span>
+            <h2 class="text-base font-semibold text-slate-900">Captura de Fotos do Documento</h2>
+          </div>
+          <span id="pages-count-badge" class="text-xs font-medium text-slate-500 bg-white border border-slate-200 px-2.5 py-1 rounded-full">
+            0 página(s)
+          </span>
+        </div>
+
+        <div class="p-5 space-y-4">
+          
+          <!-- Capture Buttons -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            
+            <!-- Live Camera Button -->
+            <button id="btn-open-live-camera" type="button" class="group relative flex items-center justify-center gap-3 px-5 py-4 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold rounded-xl shadow-sm hover:shadow-md transition-all active:scale-[0.99]">
+              <i data-lucide="camera" class="w-6 h-6 group-hover:scale-110 transition-transform"></i>
+              <div class="text-left">
+                <span class="block text-sm font-semibold">Tirar Foto (Câmera)</span>
+                <span class="block text-xs text-blue-100 font-normal">Câmera ao vivo com alinhador A4</span>
+              </div>
+            </button>
+
+            <!-- Native Camera / File Input Trigger -->
+            <label for="file-upload-input" class="group relative flex items-center justify-center gap-3 px-5 py-4 bg-slate-100 hover:bg-slate-200/80 text-slate-800 font-semibold rounded-xl border border-slate-200 shadow-2xs transition-all cursor-pointer active:scale-[0.99]">
+              <i data-lucide="image-plus" class="w-6 h-6 text-blue-600 group-hover:scale-110 transition-transform"></i>
+              <div class="text-left">
+                <span class="block text-sm font-semibold">Galeria ou Arquivos</span>
+                <span class="block text-xs text-slate-500 font-normal">Carregar fotos salvas no aparelho</span>
+              </div>
+            </label>
+
+            <!-- Hidden Inputs -->
+            <input type="file" id="native-camera-input" accept="image/*" capture="environment" class="hidden" />
+            <input type="file" id="file-upload-input" accept="image/*" multiple class="hidden" />
+          </div>
+
+          <!-- Empty State (No photos captured yet) -->
+          <div id="gallery-empty-state" class="py-12 px-4 text-center border-2 border-dashed border-slate-200 rounded-xl bg-slate-50/50">
+            <div class="w-14 h-14 mx-auto mb-3 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center">
+              <i data-lucide="file-plus" class="w-7 h-7"></i>
+            </div>
+            <h3 class="text-sm font-semibold text-slate-800">Nenhuma foto adicionada ainda</h3>
+            <p class="text-xs text-slate-500 max-w-sm mx-auto mt-1">
+              Use a câmera do seu celular ou computador para tirar fotos dos documentos ou faça o upload de arquivos de imagem.
+            </p>
+          </div>
+
+          <!-- Gallery Section (Shows when photos > 0) -->
+          <div id="gallery-section" class="hidden space-y-4">
+            
+            <!-- Filters Bar -->
+            <div class="flex items-center justify-between gap-2 flex-wrap pt-1 border-t border-slate-100">
+              <div class="flex items-center gap-1.5 flex-wrap">
+                <span class="text-xs text-slate-500 font-medium mr-1">Otimização:</span>
+                <button type="button" data-filter-mode="scan_contrast" class="px-2.5 py-1 text-xs font-medium rounded-lg bg-blue-600 text-white shadow-xs transition">
+                  Alto Contraste
+                </button>
+                <button type="button" data-filter-mode="scan_bw" class="px-2.5 py-1 text-xs font-medium rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition">
+                  Preto & Branco (Scan)
+                </button>
+                <button type="button" data-filter-mode="grayscale" class="px-2.5 py-1 text-xs font-medium rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition">
+                  Tons de Cinza
+                </button>
+                <button type="button" data-filter-mode="original" class="px-2.5 py-1 text-xs font-medium rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition">
+                  Original
+                </button>
+              </div>
+
+              <!-- Add more button -->
+              <label for="file-upload-input" class="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg cursor-pointer transition">
+                <i data-lucide="plus" class="w-3.5 h-3.5"></i> + Adicionar Mais Páginas
+              </label>
+            </div>
+
+            <!-- Thumbnail Grid -->
+            <div id="pages-gallery-container" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+              <!-- Dynamically populated page cards -->
+            </div>
+
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Step 2: Classificação e Identificação -->
+      <div id="step-2-card" class="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden opacity-50 pointer-events-none transition-all">
+        <div class="px-5 py-4 bg-slate-50/80 border-b border-slate-200/80 flex items-center justify-between">
+          <div class="flex items-center gap-2.5">
+            <span class="w-7 h-7 rounded-full bg-blue-600 text-white font-bold text-xs flex items-center justify-center shadow-xs">2</span>
+            <h2 class="text-base font-semibold text-slate-900">Classificação e Identificação</h2>
+          </div>
+          <span class="text-xs text-slate-500 font-medium">Padrão obrigatório</span>
+        </div>
+
+        <div class="p-5 space-y-5">
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            
+            <!-- Category Selection -->
+            <div>
+              <label for="select-category" class="block text-xs font-semibold text-slate-700 mb-1.5 uppercase tracking-wider">
+                Categoria de Documentos
+              </label>
+              <select id="select-category" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition">
+                <!-- Dynamically populated -->
+              </select>
+            </div>
+
+            <!-- Document Type Selection -->
+            <div>
+              <div class="flex items-center justify-between mb-1.5">
+                <label for="select-doc-type" class="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                  Tipo de Documento
+                </label>
+                <button type="button" onclick="window.docScanApp.openAddCustomDocModal()" class="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-0.5">
+                  <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i> Novo Tipo
+                </button>
+              </div>
+              <select id="select-doc-type" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition">
+                <!-- Dynamically populated -->
+              </select>
+            </div>
+
+          </div>
+
+          <!-- Document Number & User Name -->
+          <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
+            
+            <!-- Number Prefix -->
+            <div class="sm:col-span-1">
+              <label for="input-doc-number" class="block text-xs font-semibold text-slate-700 mb-1.5 uppercase tracking-wider">
+                Número
+              </label>
+              <input type="text" id="input-doc-number" value="1" placeholder="ex: 1" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-mono text-center font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition" />
+            </div>
+
+            <!-- User Name with Retention & Clear Button -->
+            <div class="sm:col-span-3">
+              <div class="flex items-center justify-between mb-1.5">
+                <label for="input-user-name" class="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                  Nome da Pessoa / Aluno <span class="text-rose-500">*</span>
+                </label>
+                <span class="text-[11px] text-slate-400">Retido automaticamente</span>
+              </div>
+              
+              <div class="relative flex items-center">
+                <input type="text" id="input-user-name" placeholder="ex: João Silva Santos" class="w-full bg-slate-50 border border-slate-300 rounded-xl pl-3.5 pr-20 py-2.5 text-sm font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition" />
+                
+                <!-- Clear Button -->
+                <button type="button" id="btn-clear-user-name" title="Limpar nome para novo cadastro" class="absolute right-1.5 px-2.5 py-1 text-xs font-medium text-slate-600 hover:text-rose-600 hover:bg-slate-200/70 rounded-lg transition flex items-center gap-1">
+                  <i data-lucide="eraser" class="w-3.5 h-3.5"></i> Limpar
+                </button>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Naming Rule Preview Box (CRITICAL) -->
+          <div class="bg-blue-50/70 border border-blue-200/80 rounded-xl p-4">
+            <div class="flex items-center justify-between flex-wrap gap-2 mb-1">
+              <span class="text-xs font-semibold text-blue-900 uppercase tracking-wider flex items-center gap-1.5">
+                <i data-lucide="tag" class="w-3.5 h-3.5 text-blue-600"></i>
+                Nome Padronizado do Arquivo:
+              </span>
+              <span class="text-[11px] font-medium text-blue-700 bg-blue-100/70 px-2 py-0.5 rounded">
+                [número]_[tipo]_[nome]
+              </span>
+            </div>
+            
+            <p id="preview-filename-text" class="text-sm font-mono font-bold text-blue-950 break-all bg-white px-3 py-2 rounded-lg border border-blue-200 shadow-2xs">
+              1_ficha_de_matricula.pdf
+            </p>
+            
+            <p class="text-[11px] text-blue-700/80 mt-1.5 flex items-center gap-1">
+              <i data-lucide="check" class="w-3 h-3 text-blue-600"></i>
+              Acentos e caracteres especiais são removidos e espaços substituídos por <code class="font-bold">_</code>
+            </p>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Step 3: Salvamento e Geração do PDF -->
+      <div id="step-3-card" class="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-5 opacity-50 pointer-events-none transition-all">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <div class="flex items-center gap-2.5 mb-1">
+              <span class="w-7 h-7 rounded-full bg-blue-600 text-white font-bold text-xs flex items-center justify-center shadow-xs">3</span>
+              <h2 class="text-base font-semibold text-slate-900">Salvar na Aplicação</h2>
+            </div>
+            <p class="text-xs text-slate-500">
+              O PDF gerado será indexado e guardado localmente de forma segura no navegador.
+            </p>
+          </div>
+
+          <button id="btn-generate-pdf" type="button" disabled class="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-bold rounded-xl shadow-md hover:shadow-lg transition-all active:scale-[0.98]">
+            <i data-lucide="file-check-2" class="w-5 h-5"></i>
+            Gerar e Salvar PDF
+          </button>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ========================================== -->
+    <!-- TAB 2: ARQUIVOS SALVOS (GERENCIAMENTO)     -->
+    <!-- ========================================== -->
+    <section data-tab-content="files" class="hidden space-y-5">
+      
+      <!-- Management Header Card -->
+      <div class="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-5 space-y-4">
+        
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h2 class="text-lg font-bold text-slate-900">Arquivos Salvos</h2>
+            <p id="saved-files-header-count" class="text-xs text-slate-500">0 documento(s) encontrado(s)</p>
+          </div>
+
+          <!-- Quick Actions -->
+          <div class="flex items-center gap-2">
+            <button onclick="window.docScanApp.switchTab('scan')" class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-xl transition">
+              <i data-lucide="camera" class="w-4 h-4"></i> Novo Documento
+            </button>
+          </div>
+        </div>
+
+        <!-- Search & Filter Bar -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          
+          <!-- Search Input -->
+          <div class="sm:col-span-2 relative">
+            <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5"></i>
+            <input type="text" id="search-files" placeholder="Buscar por arquivo, aluno ou tipo de documento..." class="w-full bg-slate-50 border border-slate-300 rounded-xl pl-10 pr-3.5 py-2.5 text-sm text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition" />
+          </div>
+
+          <!-- Select All Box -->
+          <div class="flex items-center justify-between sm:justify-end gap-2 px-1">
+            <label class="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
+              <input type="checkbox" id="checkbox-select-all" class="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer" />
+              <span>Selecionar Todos</span>
+            </label>
+          </div>
+
+        </div>
+
+        <!-- Filter Category Pills -->
+        <div class="flex items-center gap-1.5 overflow-x-auto pb-1 pt-1 no-scrollbar">
+          <button type="button" data-files-category="all" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 text-white shadow-xs transition">
+            Todos
+          </button>
+          <button type="button" data-files-category="matricula" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition">
+            Matrícula
+          </button>
+          <button type="button" data-files-category="reconsideracao" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition">
+            Reconsideração
+          </button>
+          <button type="button" data-files-category="aproveitamento" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition">
+            Aproveitamento
+          </button>
+          <button type="button" data-files-category="custom" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition">
+            Personalizados
+          </button>
+        </div>
+
+      </div>
+
+      <!-- Empty State -->
+      <div id="saved-files-empty" class="hidden py-16 px-4 text-center bg-white border border-slate-200 rounded-2xl shadow-xs">
+        <div class="w-16 h-16 mx-auto mb-3 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center">
+          <i data-lucide="folder-open" class="w-8 h-8"></i>
+        </div>
+        <h3 class="text-sm font-semibold text-slate-800">Nenhum documento encontrado</h3>
+        <p class="text-xs text-slate-500 max-w-sm mx-auto mt-1">
+          Nenhum arquivo PDF gerado corresponde aos filtros atuais ou nenhum documento foi salvo ainda.
+        </p>
+        <button onclick="window.docScanApp.switchTab('scan')" class="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-xs font-semibold rounded-xl hover:bg-blue-700 transition">
+          <i data-lucide="camera" class="w-4 h-4"></i> Iniciar Digitalização
+        </button>
+      </div>
+
+      <!-- Saved Files List Container -->
+      <div id="saved-files-list" class="space-y-3">
+        <!-- Dynamically rendered list items -->
+      </div>
+
+    </section>
+
+    <!-- ========================================== -->
+    <!-- TAB 3: CONFIGURAÇÕES & GOOGLE DRIVE        -->
+    <!-- ========================================== -->
+    <section data-tab-content="settings" class="hidden space-y-6">
+
+      <!-- Google Drive Configuration Card -->
+      <div class="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
+        <div class="px-5 py-4 bg-slate-50/80 border-b border-slate-200/80 flex items-center justify-between">
+          <div class="flex items-center gap-2.5">
+            <div class="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
+              <i data-lucide="hard-drive-upload" class="w-4 h-4"></i>
+            </div>
+            <div>
+              <h2 class="text-base font-semibold text-slate-900">Integração com Google Drive</h2>
+              <p class="text-xs text-slate-500">Configuração de pasta de destino e envio automático</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="p-5 space-y-5">
+          
+          <!-- Folder Path Field -->
+          <div>
+            <label for="input-gdrive-folder" class="block text-xs font-semibold text-slate-700 mb-1.5 uppercase tracking-wider">
+              Caminho ou ID da Pasta de Destino no Google Drive
+            </label>
+            <p class="text-xs text-slate-500 mb-2">
+              Informe o caminho ou nome da pasta (ex: <code class="font-mono text-blue-700">Matriculas_2026/Secretaria</code>) ou o ID da pasta do Google Drive. O sistema reterá esta informação permanentemente.
+            </p>
+            
+            <div class="flex gap-2">
+              <input type="text" id="input-gdrive-folder" placeholder="ex: Matriculas_2026 ou ID da pasta" class="flex-1 bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition" />
+              <button type="button" id="btn-save-gdrive-folder" class="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl transition flex items-center gap-1.5">
+                <i data-lucide="save" class="w-4 h-4"></i> Salvar Pasta
+              </button>
+              <button type="button" id="btn-clear-gdrive-folder" title="Limpar pasta" class="px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition">
+                <i data-lucide="trash-2" class="w-4 h-4"></i>
+              </button>
+            </div>
+
+            <div id="gdrive-folder-status-text" class="mt-2 text-xs">
+              <!-- Dynamically populated -->
+            </div>
+          </div>
+
+          <!-- Google Cloud API Credentials (Optional for Direct REST Upload) -->
+          <div class="pt-4 border-t border-slate-100">
+            <h3 class="text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+              <i data-lucide="key-round" class="w-3.5 h-3.5 text-slate-400"></i>
+              Configuração Opcional da API Google Cloud (Envio 100% Automático via Web)
+            </h3>
+            <p class="text-xs text-slate-500 mb-3">
+              Caso deseje que a aplicação envie arquivos diretamente pela API REST sem abrir caixas de compartilhamento, informe o Client ID do seu projeto Google Cloud.
+            </p>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+              <div>
+                <label for="input-gdrive-client-id" class="block text-[11px] font-medium text-slate-600 mb-1">
+                  Google Client ID (OAuth 2.0)
+                </label>
+                <input type="text" id="input-gdrive-client-id" placeholder="ex: 123456789-xxxx.apps.googleusercontent.com" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 focus:bg-white outline-none" />
+              </div>
+
+              <div>
+                <label for="input-gdrive-api-key" class="block text-[11px] font-medium text-slate-600 mb-1">
+                  API Key (Opcional)
+                </label>
+                <input type="password" id="input-gdrive-api-key" placeholder="ex: AIzaSy..." class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 focus:bg-white outline-none" />
+              </div>
+            </div>
+
+            <button type="button" id="btn-save-gdrive-config" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold rounded-xl transition flex items-center gap-1.5">
+              <i data-lucide="check" class="w-3.5 h-3.5"></i> Salvar Credenciais da API
+            </button>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Custom Document Types Manager -->
+      <div class="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
+        <div class="px-5 py-4 bg-slate-50/80 border-b border-slate-200/80 flex items-center justify-between">
+          <div class="flex items-center gap-2.5">
+            <div class="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+              <i data-lucide="list-plus" class="w-4 h-4"></i>
+            </div>
+            <div>
+              <h2 class="text-base font-semibold text-slate-900">Tipos de Documentos Personalizados</h2>
+              <p class="text-xs text-slate-500">Itens adicionados manualmente às listas pré-definidas</p>
+            </div>
+          </div>
+          <button type="button" onclick="window.docScanApp.openAddCustomDocModal()" class="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-xl transition">
+            <i data-lucide="plus" class="w-3.5 h-3.5"></i> Novo Tipo
+          </button>
+        </div>
+
+        <div class="p-5">
+          <div id="custom-docs-settings-list" class="space-y-2">
+            <!-- Dynamically populated list -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Local Storage & Backup -->
+      <div class="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
+        <div class="px-5 py-4 bg-slate-50/80 border-b border-slate-200/80 flex items-center justify-between">
+          <div class="flex items-center gap-2.5">
+            <div class="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+              <i data-lucide="database" class="w-4 h-4"></i>
+            </div>
+            <div>
+              <h2 class="text-base font-semibold text-slate-900">Armazenamento Local & Backup</h2>
+              <p class="text-xs text-slate-500">IndexedDB interno do navegador</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="p-5 space-y-4">
+          <div id="storage-stats-info">
+            <!-- Dynamically populated stats -->
+          </div>
+
+          <div class="flex items-center gap-3 pt-2">
+            <button type="button" id="btn-export-all" class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-xl transition flex items-center gap-1.5">
+              <i data-lucide="archive" class="w-4 h-4 text-slate-600"></i> Exportar Tudo (.ZIP)
+            </button>
+            <button type="button" id="btn-clear-all-docs" class="px-4 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold rounded-xl transition flex items-center gap-1.5">
+              <i data-lucide="alert-octagon" class="w-4 h-4"></i> Limpar Todo o Armazenamento
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- ========================================== -->
+  <!-- FLOATING BATCH ACTIONS BAR                 -->
+  <!-- ========================================== -->
+  <div id="batch-action-bar" class="hidden fixed bottom-20 md:bottom-6 left-1/2 transform -translate-x-1/2 z-40 w-11/12 max-w-xl bg-slate-900/95 backdrop-blur-md text-white px-4 py-3 rounded-2xl shadow-2xl border border-slate-800 flex items-center justify-between gap-3">
+    <div class="flex items-center gap-2">
+      <span class="w-2 h-2 rounded-full bg-blue-400 animate-ping"></span>
+      <span id="batch-selected-count" class="text-xs font-bold text-slate-200">0 selecionados</span>
+    </div>
+
+    <div class="flex items-center gap-1.5">
+      <button id="btn-batch-download" title="Baixar ZIP com todos os selecionados" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-semibold rounded-xl transition flex items-center gap-1">
+        <i data-lucide="archive" class="w-3.5 h-3.5 text-blue-400"></i> Baixar ZIP
+      </button>
+
+      <button id="btn-batch-drive" title="Enviar para o Google Drive" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1">
+        <i data-lucide="hard-drive-upload" class="w-3.5 h-3.5"></i> Google Drive
+      </button>
+
+      <button id="btn-batch-delete" title="Excluir selecionados" class="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-xl transition">
+        <i data-lucide="trash-2" class="w-4 h-4"></i>
+      </button>
+
+      <button id="btn-clear-selection" title="Cancelar seleção" class="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition">
+        <i data-lucide="x" class="w-4 h-4"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- MOBILE BOTTOM NAVIGATION BAR               -->
+  <!-- ========================================== -->
+  <nav class="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-lg border-t border-slate-200 safe-bottom">
+    <div class="grid grid-cols-3 h-16">
+      
+      <button data-tab-target="scan" class="flex flex-col items-center justify-center text-blue-600">
+        <i data-lucide="camera" class="w-5 h-5"></i>
+        <span class="text-[11px] font-semibold mt-1">Digitalizar</span>
+      </button>
+
+      <button data-tab-target="files" class="flex flex-col items-center justify-center text-slate-500 relative">
+        <div class="relative">
+          <i data-lucide="folder-check" class="w-5 h-5"></i>
+          <span class="badge-saved-files-count hidden absolute -top-1.5 -right-2.5 px-1.5 py-0.2 text-[10px] font-bold bg-blue-600 text-white rounded-full">0</span>
+        </div>
+        <span class="text-[11px] font-medium mt-1">Arquivos</span>
+      </button>
+
+      <button data-tab-target="settings" class="flex flex-col items-center justify-center text-slate-500">
+        <i data-lucide="settings" class="w-5 h-5"></i>
+        <span class="text-[11px] font-medium mt-1">Config & Drive</span>
+      </button>
+
+    </div>
+  </nav>
+
+  <!-- ========================================== -->
+  <!-- MODAL: LIVE CAMERA VIEWFINDER              -->
+  <!-- ========================================== -->
+  <div id="modal-live-camera" class="hidden fixed inset-0 z-50 bg-black flex flex-col">
+    
+    <!-- Camera Top Bar -->
+    <div class="relative z-10 px-4 py-3 bg-black/50 backdrop-blur-md flex items-center justify-between text-white">
+      <button id="btn-camera-close" class="p-2 rounded-full hover:bg-white/20 transition">
+        <i data-lucide="x" class="w-6 h-6"></i>
+      </button>
+
+      <div class="text-center">
+        <span class="text-xs font-semibold uppercase tracking-wider block">Alinhe o documento</span>
+        <span id="camera-shots-count" class="text-[11px] text-blue-400">0 foto(s) capturada(s)</span>
+      </div>
+
+      <div class="flex items-center gap-1">
+        <button id="btn-camera-torch" class="hidden p-2 rounded-full hover:bg-white/20 transition">
+          <i data-lucide="zap" class="w-5 h-5"></i>
+        </button>
+        <button id="btn-camera-switch" class="p-2 rounded-full hover:bg-white/20 transition">
+          <i data-lucide="refresh-cw" class="w-5 h-5"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Live Stream Area with A4 Viewfinder -->
+    <div class="relative flex-1 bg-black flex items-center justify-center overflow-hidden">
+      <video id="camera-video-stream" autoplay playsinline muted class="w-full h-full object-cover"></video>
+
+      <!-- A4 Document Guide Frame -->
+      <div class="viewfinder-frame">
+        <div class="viewfinder-corner tl"></div>
+        <div class="viewfinder-corner tr"></div>
+        <div class="viewfinder-corner bl"></div>
+        <div class="viewfinder-corner br"></div>
+        <div class="scanning-bar"></div>
+      </div>
+
+      <!-- Shutter Flash Overlay -->
+      <div id="camera-flash-overlay" class="absolute inset-0 bg-white opacity-0 transition-opacity pointer-events-none"></div>
+    </div>
+
+    <!-- Camera Bottom Bar / Shutter Button -->
+    <div class="relative z-10 px-6 py-6 bg-black/60 backdrop-blur-md flex items-center justify-between text-white safe-bottom">
+      <div class="w-12"></div>
+
+      <!-- Shutter button -->
+      <button id="btn-camera-shutter" class="shutter-btn w-20 h-20 rounded-full border-4 border-white bg-blue-600 hover:bg-blue-500 shadow-2xl flex items-center justify-center active:scale-90 transition">
+        <div class="w-16 h-16 rounded-full border-2 border-white/60 bg-white flex items-center justify-center">
+          <i data-lucide="camera" class="w-7 h-7 text-blue-600"></i>
+        </div>
+      </button>
+
+      <!-- Done Button -->
+      <button onclick="window.docScanApp.closeLiveCameraModal()" class="w-12 text-center text-xs font-semibold text-blue-400 hover:text-white transition">
+        Concluir
+      </button>
+    </div>
+
+  </div>
+
+  <!-- ========================================== -->
+  <!-- MODAL: IMAGE PREVIEW (ZOOM)                -->
+  <!-- ========================================== -->
+  <div id="modal-image-preview" class="hidden fixed inset-0 z-50 bg-black/90 flex flex-col p-4 backdrop-blur-sm">
+    <div class="flex items-center justify-end pb-3 text-white">
+      <button onclick="window.docScanApp.closeImagePreviewModal()" class="p-2 hover:bg-white/20 rounded-full">
+        <i data-lucide="x" class="w-6 h-6"></i>
+      </button>
+    </div>
+    <div class="flex-1 flex items-center justify-center overflow-hidden">
+      <img id="image-preview-full" src="" alt="Visualização" class="max-w-full max-h-full object-contain rounded-lg shadow-2xl" />
+    </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- MODAL: IN-APP PDF VIEWER                   -->
+  <!-- ========================================== -->
+  <div id="modal-pdf-viewer" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4">
+    <div class="bg-white rounded-2xl w-full max-w-4xl h-[90vh] flex flex-col overflow-hidden shadow-2xl border border-slate-200">
+      
+      <!-- Viewer Header -->
+      <div class="px-5 py-3.5 bg-slate-900 text-white flex items-center justify-between gap-3">
+        <div class="flex items-center gap-2 min-w-0">
+          <i data-lucide="file-text" class="w-5 h-5 text-blue-400 flex-shrink-0"></i>
+          <h3 id="pdf-viewer-title" class="text-sm font-semibold truncate font-mono text-slate-100">documento.pdf</h3>
+        </div>
+
+        <div class="flex items-center gap-1.5 flex-shrink-0">
+          <button id="btn-viewer-download" title="Baixar PDF" class="p-2 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition">
+            <i data-lucide="download" class="w-4 h-4"></i>
+          </button>
+          <button id="btn-viewer-share" title="Compartilhar" class="p-2 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition">
+            <i data-lucide="share-2" class="w-4 h-4"></i>
+          </button>
+          <button onclick="window.docScanApp.closePDFViewerModal()" class="p-2 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Viewer Body (iframe for local Blob PDF rendering) -->
+      <div class="flex-1 bg-slate-100 relative">
+        <iframe id="pdf-viewer-frame" src="about:blank" class="w-full h-full border-none"></iframe>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- MODAL: RENAME DOCUMENT (STRICT SANITIZING) -->
+  <!-- ========================================== -->
+  <div id="modal-rename-doc" class="hidden fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl border border-slate-200 space-y-4">
+      
+      <div class="flex items-center justify-between">
+        <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
+          <i data-lucide="edit-3" class="w-5 h-5 text-blue-600"></i> Renomear Arquivo
+        </h3>
+        <button onclick="window.docScanApp.closeRenameModal()" class="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <form id="form-rename-doc" class="space-y-4">
+        <div>
+          <label for="input-rename-name" class="block text-xs font-semibold text-slate-700 mb-1 uppercase tracking-wider">
+            Novo Nome
+          </label>
+          <input type="text" id="input-rename-name" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none" />
+        </div>
+
+        <div class="bg-blue-50 border border-blue-200 rounded-xl p-3">
+          <span class="text-[11px] font-semibold text-blue-900 block mb-0.5">Nome final sanitizado:</span>
+          <p id="preview-rename-name" class="text-xs font-mono font-bold text-blue-950 break-all"></p>
+        </div>
+
+        <div class="flex items-center justify-end gap-2 pt-2">
+          <button type="button" onclick="window.docScanApp.closeRenameModal()" class="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition">
+            Cancelar
+          </button>
+          <button type="submit" class="px-4 py-2 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-xs transition">
+            Salvar Nome
+          </button>
+        </div>
+      </form>
+
+    </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- MODAL: ADD CUSTOM DOCUMENT ITEM            -->
+  <!-- ========================================== -->
+  <div id="modal-add-custom-doc" class="hidden fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl border border-slate-200 space-y-4">
+      
+      <div class="flex items-center justify-between">
+        <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
+          <i data-lucide="plus-circle" class="w-5 h-5 text-blue-600"></i> Adicionar Tipo de Documento
+        </h3>
+        <button onclick="window.docScanApp.closeAddCustomDocModal()" class="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <form id="form-add-custom-doc" class="space-y-4">
+        <div>
+          <label for="modal-custom-category" class="block text-xs font-semibold text-slate-700 mb-1 uppercase tracking-wider">
+            Categoria
+          </label>
+          <select id="modal-custom-category" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-medium text-slate-900 focus:bg-white outline-none">
+            <option value="matricula">Documentos da matrícula</option>
+            <option value="reconsideracao">Documentos da reconsideração de resultado</option>
+            <option value="aproveitamento">Documentos de aproveitamento de estudos</option>
+            <option value="custom">Documentos Personalizados</option>
+          </select>
+        </div>
+
+        <div>
+          <label for="input-custom-doc-text" class="block text-xs font-semibold text-slate-700 mb-1 uppercase tracking-wider">
+            Nome do Documento (com ou sem número)
+          </label>
+          <input type="text" id="input-custom-doc-text" placeholder="ex: 8-Carteira de Vacinação" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none" />
+          <p class="text-[11px] text-slate-500 mt-1">
+            Se iniciar com número (ex: <code class="font-mono">8-</code>), este número será usado como prefixo padrão.
+          </p>
+        </div>
+
+        <div class="flex items-center justify-end gap-2 pt-2">
+          <button type="button" onclick="window.docScanApp.closeAddCustomDocModal()" class="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition">
+            Cancelar
+          </button>
+          <button type="submit" class="px-4 py-2 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-xs transition">
+            Adicionar à Lista
+          </button>
+        </div>
+      </form>
+
+    </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- MODAL: GOOGLE DRIVE DISPATCH               -->
+  <!-- ========================================== -->
+  <div id="modal-gdrive-dispatch" class="hidden fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl w-full max-w-lg p-6 shadow-2xl border border-slate-200 space-y-4">
+      
+      <div class="flex items-center justify-between">
+        <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
+          <i data-lucide="hard-drive-upload" class="w-5 h-5 text-blue-600"></i> Envio para o Google Drive
+        </h3>
+        <button onclick="window.docScanApp.closeGDriveDispatchModal()" class="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div id="gdrive-dispatch-info" class="bg-blue-50/70 border border-blue-200/80 rounded-xl p-3.5">
+        <!-- Info filled dynamically -->
+      </div>
+
+      <div class="space-y-1">
+        <span class="text-xs font-semibold text-slate-700 uppercase tracking-wider block">Arquivos selecionados:</span>
+        <ul id="gdrive-dispatch-filelist" class="max-h-36 overflow-y-auto pr-1">
+          <!-- Files list -->
+        </ul>
+      </div>
+
+      <!-- Action buttons -->
+      <div class="space-y-2 pt-2">
+        <!-- Native Share (Direct Drive App on phones) -->
+        <button id="btn-gdrive-native-share" class="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl shadow-sm transition">
+          <i data-lucide="share" class="w-4 h-4"></i> Salvar Diretamente no App Google Drive
+        </button>
+
+        <button id="btn-gdrive-open-web" class="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold text-xs rounded-xl transition">
+          <i data-lucide="external-link" class="w-4 h-4"></i> Abrir Google Drive no Navegador
+        </button>
+
+        <button id="btn-gdrive-download-bundle" class="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold text-xs rounded-xl transition">
+          <i data-lucide="download" class="w-4 h-4"></i> Baixar Pacote ZIP para Arrastar ao Drive
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- MODAL: SUCCESSFUL SAVE                     -->
+  <!-- ========================================== -->
+  <div id="modal-save-success" class="hidden fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl border border-slate-200 space-y-4 text-center">
+      
+      <div class="w-14 h-14 mx-auto rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shadow-xs">
+        <i data-lucide="check-circle" class="w-8 h-8"></i>
+      </div>
+
+      <div>
+        <h3 class="text-lg font-bold text-slate-900">Documento Gerado com Sucesso!</h3>
+        <p id="success-modal-filename" class="text-xs font-mono font-bold text-blue-900 bg-blue-50 border border-blue-200 py-1.5 px-3 rounded-lg mt-2 break-all"></p>
+        <p id="success-modal-details" class="text-xs text-slate-500 mt-1"></p>
+      </div>
+
+      <div class="grid grid-cols-2 gap-2 pt-2">
+        <button id="btn-success-view" class="flex items-center justify-center gap-1.5 px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold text-xs rounded-xl transition">
+          <i data-lucide="eye" class="w-4 h-4"></i> Visualizar
+        </button>
+        <button id="btn-success-download" class="flex items-center justify-center gap-1.5 px-3 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl transition">
+          <i data-lucide="download" class="w-4 h-4"></i> Baixar
+        </button>
+      </div>
+
+      <div class="border-t border-slate-100 pt-3 space-y-2">
+        <button id="btn-success-next-doc" class="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-900 text-white font-semibold text-xs rounded-xl transition">
+          <i data-lucide="copy-plus" class="w-4 h-4 text-emerald-400"></i> Próximo Documento deste Aluno
+        </button>
+        <button id="btn-success-new-student" class="w-full flex items-center justify-center gap-2 px-4 py-2 text-slate-600 hover:text-slate-900 text-xs font-medium rounded-xl transition">
+          <i data-lucide="user-plus" class="w-3.5 h-3.5"></i> Iniciar Novo Aluno
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- GLOBAL LOADING OVERLAY                     -->
+  <!-- ========================================== -->
+  <div id="global-loading-overlay" class="hidden fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl text-center space-y-3">
+      <div class="w-12 h-12 mx-auto rounded-full border-4 border-blue-200 border-t-blue-600 animate-spin"></div>
+      <h4 id="loading-overlay-message" class="text-sm font-bold text-slate-900">Processando...</h4>
+      
+      <!-- Progress Bar -->
+      <div class="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+        <div id="loading-overlay-progress-bar" class="bg-blue-600 h-2 rounded-full transition-all duration-200" style="width: 0%"></div>
+      </div>
+      <span id="loading-overlay-progress-text" class="text-xs text-slate-500 font-mono">0%</span>
+    </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- TOAST CONTAINER                            -->
+  <!-- ========================================== -->
+  <div id="toast-container" class="fixed top-5 right-5 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none px-4 sm:px-0"></div>
+
+  <!-- ========================================== -->
+  <!-- EMBEDDED JAVASCRIPT LOGIC (SELF-CONTAINED) -->
+  <!-- ========================================== -->
+  <script>
+    // -------------------------------------------------------------
+    // 1. STORAGE SERVICE (IndexedDB & LocalStorage)
+    // -------------------------------------------------------------
+    const DB_NAME = 'DocScanDB';
+    const DB_VERSION = 1;
+    const STORE_NAME = 'documents';
+
+    class StorageService {
+      constructor() {
+        this.db = null;
+        this.dbPromise = this.initDB();
+      }
+
+      async initDB() {
+        return new Promise((resolve, reject) => {
+          const request = indexedDB.open(DB_NAME, DB_VERSION);
+          request.onupgradeneeded = (event) => {
+            const db = event.target.result;
+            if (!db.objectStoreNames.contains(STORE_NAME)) {
+              const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+              store.createIndex('createdAt', 'createdAt', { unique: false });
+              store.createIndex('userName', 'userName', { unique: false });
+              store.createIndex('category', 'category', { unique: false });
+            }
+          };
+          request.onsuccess = (event) => {
+            this.db = event.target.result;
+            resolve(this.db);
+          };
+          request.onerror = (event) => reject(event.target.error);
+        });
+      }
+
+      async getDB() {
+        if (!this.db) await this.dbPromise;
+        return this.db;
+      }
+
+      async saveDocument(docData) {
+        const db = await this.getDB();
+        return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_NAME, 'readwrite');
+          const store = tx.objectStore(STORE_NAME);
+          const req = store.put(docData);
+          req.onsuccess = () => resolve(docData);
+          req.onerror = (e) => reject(e.target.error);
+        });
+      }
+
+      async getAllDocuments() {
+        const db = await this.getDB();
+        return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_NAME, 'readonly');
+          const store = tx.objectStore(STORE_NAME);
+          const req = store.getAll();
+          req.onsuccess = () => {
+            const results = req.result || [];
+            results.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+            resolve(results);
+          };
+          req.onerror = (e) => reject(e.target.error);
+        });
+      }
+
+      async getDocumentById(id) {
+        const db = await this.getDB();
+        return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_NAME, 'readonly');
+          const store = tx.objectStore(STORE_NAME);
+          const req = store.get(id);
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = (e) => reject(e.target.error);
+        });
+      }
+
+      async deleteDocument(id) {
+        const db = await this.getDB();
+        return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_NAME, 'readwrite');
+          const store = tx.objectStore(STORE_NAME);
+          const req = store.delete(id);
+          req.onsuccess = () => resolve(true);
+          req.onerror = (e) => reject(e.target.error);
+        });
+      }
+
+      async deleteMultipleDocuments(ids) {
+        const db = await this.getDB();
+        return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_NAME, 'readwrite');
+          const store = tx.objectStore(STORE_NAME);
+          ids.forEach(id => store.delete(id));
+          tx.oncomplete = () => resolve(ids.length);
+          tx.onerror = (e) => reject(e.target.error);
+        });
+      }
+
+      async updateDocumentFilename(id, newFilename) {
+        const db = await this.getDB();
+        return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_NAME, 'readwrite');
+          const store = tx.objectStore(STORE_NAME);
+          const getReq = store.get(id);
+          getReq.onsuccess = () => {
+            const doc = getReq.result;
+            if (!doc) return reject(new Error('Documento não encontrado.'));
+            doc.filename = newFilename;
+            doc.updatedAt = new Date().toISOString();
+            const putReq = store.put(doc);
+            putReq.onsuccess = () => resolve(doc);
+            putReq.onerror = (e) => reject(e.target.error);
+          };
+          getReq.onerror = (e) => reject(e.target.error);
+        });
+      }
+
+      getUserName() { return localStorage.getItem('docscan_user_name') || ''; }
+      setUserName(name) { if (name) localStorage.setItem('docscan_user_name', name.trim()); else this.clearUserName(); }
+      clearUserName() { localStorage.removeItem('docscan_user_name'); }
+
+      getGDriveFolder() { return localStorage.getItem('docscan_gdrive_folder') || ''; }
+      setGDriveFolder(f) { if (f) localStorage.setItem('docscan_gdrive_folder', f.trim()); else localStorage.removeItem('docscan_gdrive_folder'); }
+      clearGDriveFolder() { localStorage.removeItem('docscan_gdrive_folder'); }
+
+      getGDriveConfig() {
+        return {
+          clientId: localStorage.getItem('docscan_gdrive_client_id') || '',
+          apiKey: localStorage.getItem('docscan_gdrive_api_key') || ''
+        };
+      }
+      setGDriveConfig(c, k) {
+        localStorage.setItem('docscan_gdrive_client_id', (c || '').trim());
+        localStorage.setItem('docscan_gdrive_api_key', (k || '').trim());
+      }
+
+      getCustomDocuments() {
+        try {
+          const s = localStorage.getItem('docscan_custom_documents');
+          return s ? JSON.parse(s) : [];
+        } catch (e) { return []; }
+      }
+      addCustomDocument(item) {
+        const list = this.getCustomDocuments();
+        list.push(item);
+        localStorage.setItem('docscan_custom_documents', JSON.stringify(list));
+        return list;
+      }
+      removeCustomDocument(id) {
+        let list = this.getCustomDocuments().filter(i => i.id !== id);
+        localStorage.setItem('docscan_custom_documents', JSON.stringify(list));
+        return list;
+      }
+    }
+    window.storageService = new StorageService();
+
+    // -------------------------------------------------------------
+    // 2. DOCUMENT TYPES & STRICT NAMING RULES
+    // -------------------------------------------------------------
+    const DEFAULT_DOCUMENT_CATEGORIES = [
+      {
+        id: 'matricula',
+        title: 'Documentos da matrícula',
+        items: [
+          { id: 'mat_1', number: '1', name: 'Ficha de Matrícula', raw: '1-Ficha de Matrícula' },
+          { id: 'mat_2a', number: '2', name: 'Certidão de Nascimento', raw: '2-Certidão de Nascimento' },
+          { id: 'mat_2b', number: '2', name: 'Certidão de Casamento', raw: '2-Certidão de Casamento' },
+          { id: 'mat_3a', number: '3', name: 'RG', raw: '3-RG' },
+          { id: 'mat_3b', number: '3', name: 'CPF', raw: '3-CPF' },
+          { id: 'mat_4', number: '4', name: 'Comprovante de endereço', raw: '4-Comprovante de endereço' },
+          { id: 'mat_5', number: '5', name: 'Histórico do Fundamental', raw: '5-Histórico do Fundamental' },
+          { id: 'mat_6', number: '6', name: 'Histórico do Ensino Médio', raw: '6-Histórico do Ensino Médio' },
+          { id: 'mat_7', number: '7', name: 'Foto', raw: '7-Foto' },
+          { id: 'mat_generic', number: '1', name: 'Documentos Matrícula', raw: 'Documentos Matricula' }
+        ]
+      },
+      {
+        id: 'reconsideracao',
+        title: 'Documentos da reconsideração de resultado',
+        items: [
+          { id: 'rec_1', number: '1', name: 'Requerimento de reconsideração', raw: '1-Requerimento de reconsideração' },
+          { id: 'rec_2', number: '2', name: 'Ata do Conselho de Classe', raw: '2-Ata do Conselho de Classe' },
+          { id: 'rec_3', number: '3', name: 'Ata de Reconsideração', raw: '3-Ata de Reconsideração' }
+        ]
+      },
+      {
+        id: 'aproveitamento',
+        title: 'Documentos de aproveitamento de estudos',
+        items: [
+          { id: 'apr_1', number: '1', name: 'Requerimento de aproveitamento', raw: '1-Requerimento de aproveitamento' },
+          { id: 'apr_2', number: '2', name: 'Histórico escolar', raw: '2-Histórico escolar' }
+        ]
+      }
+    ];
+
+    class DocumentTypesManager {
+      constructor() {
+        this.categories = JSON.parse(JSON.stringify(DEFAULT_DOCUMENT_CATEGORIES));
+        this.loadCustomItems();
+      }
+
+      loadCustomItems() {
+        const customList = window.storageService.getCustomDocuments();
+        customList.forEach(customItem => {
+          let cat = this.categories.find(c => c.id === customItem.categoryId);
+          if (!cat) {
+            cat = this.categories.find(c => c.id === 'custom');
+            if (!cat) {
+              cat = { id: 'custom', title: 'Documentos Personalizados', items: [] };
+              this.categories.push(cat);
+            }
+          }
+          if (!cat.items.some(i => i.id === customItem.id)) {
+            cat.items.push(customItem);
+          }
+        });
+      }
+
+      getAllCategories() {
+        this.categories = JSON.parse(JSON.stringify(DEFAULT_DOCUMENT_CATEGORIES));
+        this.loadCustomItems();
+        return this.categories;
+      }
+
+      addCustomItem(categoryId, rawText) {
+        if (!rawText || !rawText.trim()) return null;
+        const match = rawText.trim().match(/^(\d+)[\s.-]*(.*)$/);
+        const number = match ? match[1] : '1';
+        const name = match ? match[2].trim() : rawText.trim();
+        const newItem = {
+          id: 'custom_' + Date.now(),
+          categoryId: categoryId || 'matricula',
+          number,
+          name,
+          raw: rawText.trim()
+        };
+        window.storageService.addCustomDocument(newItem);
+        this.loadCustomItems();
+        return newItem;
+      }
+
+      sanitizeString(text) {
+        if (!text) return '';
+        return text
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .toLowerCase()
+          .replace(/[^a-z0-9\s_-]/g, '')
+          .trim()
+          .replace(/[\s-]+/g, '_')
+          .replace(/_+/g, '_');
+      }
+
+      formatFilename(docNumber, docType, userName, includeExtension = true) {
+        const cleanNumber = String(docNumber || '1').trim().replace(/[^0-9]/g, '') || '1';
+        const cleanDocType = this.sanitizeString(docType);
+        const cleanUserName = this.sanitizeString(userName);
+
+        let filename = `${cleanNumber}`;
+        if (cleanDocType) filename += `_${cleanDocType}`;
+        if (cleanUserName) filename += `_${cleanUserName}`;
+        filename = filename.replace(/^_+|_+$/g, '');
+        return includeExtension ? `${filename}.pdf` : filename;
+      }
+
+      sanitizeCompleteFilename(inputFilename) {
+        if (!inputFilename) return 'documento.pdf';
+        let base = inputFilename.replace(/\.pdf$/i, '');
+        let clean = this.sanitizeString(base);
+        return `${clean || 'documento'}.pdf`;
+      }
+    }
+    window.documentTypesManager = new DocumentTypesManager();
+
+    // -------------------------------------------------------------
+    // 3. IMAGE PROCESSOR (CANVAS FILTERS & SCALING)
+    // -------------------------------------------------------------
+    class ImageProcessor {
+      async loadImage(fileOrBlob) {
+        return new Promise((resolve, reject) => {
+          const url = URL.createObjectURL(fileOrBlob);
+          const img = new Image();
+          img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+          img.onerror = (err) => { URL.revokeObjectURL(url); reject(err); };
+          img.src = url;
+        });
+      }
+
+      processImage(img, rotation = 0, filter = 'original', maxWidth = 2000) {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        let srcWidth = img.width || img.videoWidth;
+        let srcHeight = img.height || img.videoHeight;
+
+        let scale = 1;
+        if (Math.max(srcWidth, srcHeight) > maxWidth) {
+          scale = maxWidth / Math.max(srcWidth, srcHeight);
+        }
+        const scaledWidth = Math.round(srcWidth * scale);
+        const scaledHeight = Math.round(srcHeight * scale);
+
+        const isSideways = rotation === 90 || rotation === 270;
+        canvas.width = isSideways ? scaledHeight : scaledWidth;
+        canvas.height = isSideways ? scaledWidth : scaledHeight;
+
+        ctx.save();
+        ctx.translate(canvas.width / 2, canvas.height / 2);
+        ctx.rotate((rotation * Math.PI) / 180);
+        ctx.drawImage(img, -scaledWidth / 2, -scaledHeight / 2, scaledWidth, scaledHeight);
+        ctx.restore();
+
+        if (filter !== 'original') {
+          this.applyFilter(canvas, filter);
+        }
+        return canvas;
+      }
+
+      applyFilter(canvas, filter) {
+        const ctx = canvas.getContext('2d');
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = imageData.data;
+        const len = data.length;
+
+        if (filter === 'grayscale') {
+          for (let i = 0; i < len; i += 4) {
+            const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+            data[i] = data[i + 1] = data[i + 2] = gray;
+          }
+        } else if (filter === 'scan_bw') {
+          for (let i = 0; i < len; i += 4) {
+            let gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+            gray = gray > 140 ? 255 : (gray < 90 ? 0 : Math.round(((gray - 90) / 50) * 255));
+            data[i] = data[i + 1] = data[i + 2] = gray;
+          }
+        } else if (filter === 'scan_contrast') {
+          const contrast = 1.4;
+          const factor = (259 * (contrast * 100 + 255)) / (255 * (259 - contrast * 100));
+          for (let i = 0; i < len; i += 4) {
+            data[i] = Math.min(255, Math.max(0, factor * (data[i] - 128) + 128 + 15));
+            data[i + 1] = Math.min(255, Math.max(0, factor * (data[i + 1] - 128) + 128 + 15));
+            data[i + 2] = Math.min(255, Math.max(0, factor * (data[i + 2] - 128) + 128 + 15));
+          }
+        }
+        ctx.putImageData(imageData, 0, 0);
+      }
+
+      createThumbnail(canvas, maxDim = 320) {
+        const thumbCanvas = document.createElement('canvas');
+        const thumbCtx = thumbCanvas.getContext('2d');
+        let w = canvas.width;
+        let h = canvas.height;
+        if (w > h) {
+          if (w > maxDim) { h = Math.round((h * maxDim) / w); w = maxDim; }
+        } else {
+          if (h > maxDim) { w = Math.round((w * maxDim) / h); h = maxDim; }
+        }
+        thumbCanvas.width = w;
+        thumbCanvas.height = h;
+        thumbCtx.drawImage(canvas, 0, 0, w, h);
+        return thumbCanvas.toDataURL('image/jpeg', 0.7);
+      }
+    }
+    window.imageProcessor = new ImageProcessor();
+
+    // -------------------------------------------------------------
+    // 4. PDF GENERATOR (jsPDF)
+    // -------------------------------------------------------------
+    class PDFGenerator {
+      async generatePDF(pages, metadata = {}, onProgress = null) {
+        if (!pages || pages.length === 0) throw new Error('Nenhuma página para gerar o PDF.');
+        const { jsPDF } = window.jspdf;
+        let doc = null;
+        let thumbnail = null;
+
+        const A4_WIDTH = 210;
+        const A4_HEIGHT = 297;
+        const MARGIN = 10;
+        const USABLE_WIDTH = A4_WIDTH - MARGIN * 2;
+        const USABLE_HEIGHT = A4_HEIGHT - MARGIN * 2;
+
+        for (let i = 0; i < pages.length; i++) {
+          if (onProgress) onProgress(Math.round(((i + 0.5) / pages.length) * 100));
+
+          const canvas = pages[i].canvas;
+          const isLandscape = canvas.width > canvas.height;
+          const pageOrientation = isLandscape ? 'landscape' : 'portrait';
+          const pageWidth = isLandscape ? A4_HEIGHT : A4_WIDTH;
+          const pageHeight = isLandscape ? A4_WIDTH : A4_HEIGHT;
+          const usableW = pageWidth - MARGIN * 2;
+          const usableH = pageHeight - MARGIN * 2;
+
+          if (i === 0) {
+            doc = new jsPDF({ orientation: pageOrientation, unit: 'mm', format: 'a4', compress: true });
+            thumbnail = window.imageProcessor.createThumbnail(canvas, 300);
+          } else {
+            doc.addPage('a4', pageOrientation);
+          }
+
+          const ratio = canvas.width / canvas.height;
+          let finalW = usableW;
+          let finalH = finalW / ratio;
+          if (finalH > usableH) {
+            finalH = usableH;
+            finalW = finalH * ratio;
+          }
+
+          const x = MARGIN + (usableW - finalW) / 2;
+          const y = MARGIN + (usableH - finalH) / 2;
+          const imgData = canvas.toDataURL('image/jpeg', 0.88);
+          doc.addImage(imgData, 'JPEG', x, y, finalW, finalH, undefined, 'FAST');
+
+          if (onProgress) onProgress(Math.round(((i + 1) / pages.length) * 100));
+        }
+
+        doc.setProperties({
+          title: metadata.filename || 'Documento Digitalizado',
+          subject: metadata.category || 'Digitalização',
+          author: metadata.userName || 'DocScan Pro',
+          creator: 'DocScan Pro - Sistema de Digitalização'
+        });
+
+        const blob = doc.output('blob');
+        return { blob, fileSize: blob.size, pageCount: pages.length, thumbnail };
+      }
+
+      formatBytes(bytes, decimals = 1) {
+        if (!bytes || bytes === 0) return '0 B';
+        const k = 1024;
+        const dm = decimals < 0 ? 0 : decimals;
+        const sizes = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+      }
+    }
+    window.pdfGenerator = new PDFGenerator();
+
+    // -------------------------------------------------------------
+    // 5. CAMERA CONTROLLER
+    // -------------------------------------------------------------
+    class CameraController {
+      constructor() {
+        this.stream = null;
+        this.videoElement = null;
+        this.facingMode = 'environment';
+        this.torchOn = false;
+        this.hasTorch = false;
+        this.isCameraActive = false;
+      }
+
+      async startLiveCamera(videoEl) {
+        this.videoElement = videoEl;
+        this.stopCamera();
+        try {
+          this.stream = await navigator.mediaDevices.getUserMedia({
+            audio: false,
+            video: {
+              facingMode: { ideal: this.facingMode },
+              width: { ideal: 1920 },
+              height: { ideal: 1080 }
+            }
+          });
+          this.videoElement.srcObject = this.stream;
+          await this.videoElement.play();
+          this.isCameraActive = true;
+
+          const track = this.stream.getVideoTracks()[0];
+          const capabilities = track.getCapabilities ? track.getCapabilities() : {};
+          this.hasTorch = !!capabilities.torch;
+          return { success: true, hasTorch: this.hasTorch };
+        } catch (err) {
+          this.isCameraActive = false;
+          return { success: false, error: err };
+        }
+      }
+
+      async switchCamera() {
+        this.facingMode = this.facingMode === 'environment' ? 'user' : 'environment';
+        if (this.videoElement && this.isCameraActive) {
+          return await this.startLiveCamera(this.videoElement);
+        }
+      }
+
+      async toggleTorch() {
+        if (!this.stream || !this.hasTorch) return false;
+        const track = this.stream.getVideoTracks()[0];
+        try {
+          this.torchOn = !this.torchOn;
+          await track.applyConstraints({ advanced: [{ torch: this.torchOn }] });
+          return this.torchOn;
+        } catch (e) { return false; }
+      }
+
+      captureFrame() {
+        if (!this.videoElement || !this.isCameraActive) throw new Error('Câmera não ativa.');
+        const canvas = document.createElement('canvas');
+        canvas.width = this.videoElement.videoWidth || 1280;
+        canvas.height = this.videoElement.videoHeight || 720;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(this.videoElement, 0, 0, canvas.width, canvas.height);
+        if (navigator.vibrate) navigator.vibrate(40);
+        this.playShutterSound();
+        return canvas;
+      }
+
+      playShutterSound() {
+        try {
+          const AudioContext = window.AudioContext || window.webkitAudioContext;
+          if (!AudioContext) return;
+          const ctx = new AudioContext();
+          const buffer = ctx.createBuffer(1, ctx.sampleRate * 0.08, ctx.sampleRate);
+          const data = buffer.getChannelData(0);
+          for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+          const noise = ctx.createBufferSource();
+          noise.buffer = buffer;
+          const filter = ctx.createBiquadFilter();
+          filter.type = 'highpass'; filter.frequency.value = 1000;
+          const gain = ctx.createGain();
+          gain.gain.setValueAtTime(0.3, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.07);
+          noise.connect(filter); filter.connect(gain); gain.connect(ctx.destination);
+          noise.start();
+          setTimeout(() => ctx.close(), 120);
+        } catch (e) {}
+      }
+
+      stopCamera() {
+        if (this.stream) {
+          this.stream.getTracks().forEach(t => t.stop());
+          this.stream = null;
+        }
+        if (this.videoElement) this.videoElement.srcObject = null;
+        this.isCameraActive = false;
+        this.torchOn = false;
+      }
+    }
+    window.cameraController = new CameraController();
+
+    // -------------------------------------------------------------
+    // 6. GOOGLE DRIVE SERVICE
+    // -------------------------------------------------------------
+    class GoogleDriveService {
+      constructor() {
+        this.tokenClient = null;
+        this.accessToken = null;
+      }
+
+      getTargetFolder() { return window.storageService.getGDriveFolder(); }
+      setTargetFolder(f) { window.storageService.setGDriveFolder(f); }
+      clearTargetFolder() { window.storageService.clearGDriveFolder(); }
+      getConfig() { return window.storageService.getGDriveConfig(); }
+      saveConfig(c, k) { window.storageService.setGDriveConfig(c, k); }
+
+      initGisClient(clientId) {
+        if (!window.google?.accounts || !clientId) return false;
+        try {
+          this.tokenClient = google.accounts.oauth2.initTokenClient({
+            client_id: clientId,
+            scope: 'https://www.googleapis.com/auth/drive.file',
+            callback: (resp) => { if (!resp.error) this.accessToken = resp.access_token; }
+          });
+          return true;
+        } catch (e) { return false; }
+      }
+
+      async getAuthToken(clientId) {
+        if (this.accessToken) return this.accessToken;
+        if (!this.tokenClient && clientId) this.initGisClient(clientId);
+        if (!this.tokenClient) throw new Error('Google Client ID não configurado.');
+
+        return new Promise((resolve, reject) => {
+          this.tokenClient.callback = (resp) => {
+            if (resp.error) reject(new Error(resp.error_description || resp.error));
+            else { this.accessToken = resp.access_token; resolve(this.accessToken); }
+          };
+          this.tokenClient.requestAccessToken({ prompt: 'consent' });
+        });
+      }
+
+      async uploadFile(pdfBlob, filename, folderId = null) {
+        const config = this.getConfig();
+        if (!config.clientId) throw new Error('CONFIG_REQUIRED');
+        const token = await this.getAuthToken(config.clientId);
+        const metadata = { name: filename, mimeType: 'application/pdf' };
+        if (folderId && folderId.trim()) metadata.parents = [folderId.trim()];
+
+        const form = new FormData();
+        form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+        form.append('file', pdfBlob);
+
+        const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: form
+        });
+        if (!response.ok) throw new Error(`Upload error status: ${response.status}`);
+        return await response.json();
+      }
+
+      async batchUpload(files, folderId, onProgress) {
+        const results = [];
+        for (let i = 0; i < files.length; i++) {
+          if (onProgress) onProgress(i + 1, files.length, files[i].filename);
+          try {
+            const res = await this.uploadFile(files[i].pdfBlob, files[i].filename, folderId);
+            results.push({ success: true, filename: files[i].filename, result: res });
+          } catch (e) {
+            results.push({ success: false, filename: files[i].filename, error: e.message });
+          }
+        }
+        return results;
+      }
+
+      canShareFiles() { return !!(navigator.canShare && navigator.share); }
+
+      async shareFilesToDrive(files) {
+        if (!this.canShareFiles()) return false;
+        try {
+          const fileList = files.map(f => new File([f.pdfBlob], f.filename, { type: 'application/pdf' }));
+          if (navigator.canShare({ files: fileList })) {
+            await navigator.share({
+              files: fileList,
+              title: 'Documentos Digitalizados',
+              text: `Envio de ${files.length} documento(s) para o Google Drive`
+            });
+            return true;
+          }
+          return false;
+        } catch (e) { return e.name === 'AbortError'; }
+      }
+    }
+    window.googleDriveService = new GoogleDriveService();
+
+    // -------------------------------------------------------------
+    // 7. DOCSCAN APP CONTROLLER
+    // -------------------------------------------------------------
+    class DocScanApp {
+      constructor() {
+        this.currentPages = [];
+        this.currentFilter = 'scan_contrast';
+        this.selectedDocCategory = 'matricula';
+        this.selectedDocItem = null;
+        this.docNumber = '1';
+        this.docType = 'ficha_de_matricula';
+        this.userName = '';
+
+        this.savedDocuments = [];
+        this.selectedDocIds = new Set();
+        this.searchQuery = '';
+        this.categoryFilter = 'all';
+        this.currentViewDoc = null;
+        this.currentRenameDocId = null;
+        this.currentTab = 'scan';
+      }
+
+      async init() {
+        this.loadUserPreferences();
+        this.setupEventListeners();
+        this.renderCategoryOptions();
+        this.updateFilenamePreview();
+        await this.refreshSavedDocumentsList();
+        this.updateBadgeCount();
+        this.updateGDriveUI();
+        if (window.lucide) window.lucide.createIcons();
+      }
+
+      loadUserPreferences() {
+        this.userName = window.storageService.getUserName();
+        const userNameInput = document.getElementById('input-user-name');
+        if (userNameInput) userNameInput.value = this.userName;
+      }
+
+      setupEventListeners() {
+        document.querySelectorAll('[data-tab-target]').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            this.switchTab(e.currentTarget.getAttribute('data-tab-target'));
+          });
+        });
+
+        document.getElementById('native-camera-input')?.addEventListener('change', (e) => this.handleImageFiles(e.target.files));
+        document.getElementById('file-upload-input')?.addEventListener('change', (e) => this.handleImageFiles(e.target.files));
+
+        document.getElementById('btn-open-live-camera')?.addEventListener('click', () => this.openLiveCameraModal());
+        document.getElementById('btn-camera-shutter')?.addEventListener('click', () => this.captureLivePhoto());
+        document.getElementById('btn-camera-close')?.addEventListener('click', () => this.closeLiveCameraModal());
+        document.getElementById('btn-camera-switch')?.addEventListener('click', () => window.cameraController.switchCamera());
+        document.getElementById('btn-camera-torch')?.addEventListener('click', async () => {
+          const on = await window.cameraController.toggleTorch();
+          document.getElementById('btn-camera-torch').classList.toggle('text-amber-400', on);
+        });
+
+        document.querySelectorAll('[data-filter-mode]').forEach(btn => {
+          btn.addEventListener('click', (e) => this.setFilterMode(e.currentTarget.getAttribute('data-filter-mode')));
+        });
+
+        document.getElementById('select-category')?.addEventListener('change', (e) => {
+          this.selectedDocCategory = e.target.value;
+          this.renderDocumentTypeOptions();
+          this.updateFilenamePreview();
+        });
+
+        document.getElementById('select-doc-type')?.addEventListener('change', (e) => {
+          if (e.target.value === '__NEW__') { this.openAddCustomDocModal(); return; }
+          this.handleDocTypeChange(e.target.value);
+        });
+
+        document.getElementById('input-doc-number')?.addEventListener('input', (e) => {
+          this.docNumber = e.target.value.replace(/[^0-9]/g, '');
+          this.updateFilenamePreview();
+        });
+
+        document.getElementById('input-user-name')?.addEventListener('input', (e) => {
+          this.userName = e.target.value;
+          window.storageService.setUserName(this.userName);
+          this.updateFilenamePreview();
+        });
+
+        document.getElementById('btn-clear-user-name')?.addEventListener('click', () => {
+          this.userName = '';
+          const inp = document.getElementById('input-user-name');
+          if (inp) inp.value = '';
+          window.storageService.clearUserName();
+          this.updateFilenamePreview();
+          this.showToast('Nome apagado. Pronto para novo cadastro.', 'info');
+        });
+
+        document.getElementById('btn-generate-pdf')?.addEventListener('click', () => this.generateAndSavePDF());
+
+        document.getElementById('search-files')?.addEventListener('input', (e) => {
+          this.searchQuery = e.target.value.toLowerCase().trim();
+          this.renderSavedDocumentsList();
+        });
+
+        document.querySelectorAll('[data-files-category]').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            document.querySelectorAll('[data-files-category]').forEach(b => {
+              b.classList.remove('bg-blue-600', 'text-white');
+              b.classList.add('bg-slate-100', 'text-slate-700');
+            });
+            e.currentTarget.classList.remove('bg-slate-100', 'text-slate-700');
+            e.currentTarget.classList.add('bg-blue-600', 'text-white');
+            this.categoryFilter = e.currentTarget.getAttribute('data-files-category');
+            this.renderSavedDocumentsList();
+          });
+        });
+
+        document.getElementById('checkbox-select-all')?.addEventListener('change', (e) => {
+          this.toggleSelectAll(e.target.checked);
+        });
+
+        document.getElementById('btn-batch-delete')?.addEventListener('click', () => this.confirmBatchDelete());
+        document.getElementById('btn-batch-download')?.addEventListener('click', () => this.downloadSelectedAsZip());
+        document.getElementById('btn-batch-drive')?.addEventListener('click', () => this.uploadSelectedToGDrive());
+        document.getElementById('btn-clear-selection')?.addEventListener('click', () => this.clearSelection());
+
+        document.getElementById('btn-save-gdrive-folder')?.addEventListener('click', () => {
+          const input = document.getElementById('input-gdrive-folder');
+          window.googleDriveService.setTargetFolder(input?.value || '');
+          this.updateGDriveUI();
+          this.showToast('Pasta de destino do Google Drive salva!', 'success');
+        });
+
+        document.getElementById('btn-clear-gdrive-folder')?.addEventListener('click', () => {
+          window.googleDriveService.clearTargetFolder();
+          const input = document.getElementById('input-gdrive-folder');
+          if (input) input.value = '';
+          this.updateGDriveUI();
+          this.showToast('Pasta do Google Drive apagada.', 'info');
+        });
+
+        document.getElementById('btn-save-gdrive-config')?.addEventListener('click', () => {
+          const clientId = document.getElementById('input-gdrive-client-id').value.trim();
+          const apiKey = document.getElementById('input-gdrive-api-key').value.trim();
+          window.googleDriveService.saveConfig(clientId, apiKey);
+          this.showToast('Configurações salvas!', 'success');
+        });
+
+        document.getElementById('form-add-custom-doc')?.addEventListener('submit', (e) => {
+          e.preventDefault();
+          this.saveCustomDocumentItem();
+        });
+
+        document.getElementById('form-rename-doc')?.addEventListener('submit', (e) => {
+          e.preventDefault();
+          this.saveRenameDocument();
+        });
+
+        document.getElementById('input-rename-name')?.addEventListener('input', (e) => {
+          const preview = document.getElementById('preview-rename-name');
+          if (preview) preview.textContent = window.documentTypesManager.sanitizeCompleteFilename(e.target.value);
+        });
+
+        document.getElementById('btn-export-all')?.addEventListener('click', () => this.exportAllDocumentsZip());
+        document.getElementById('btn-clear-all-docs')?.addEventListener('click', () => this.confirmClearAllDocuments());
+      }
+
+      switchTab(tabId) {
+        this.currentTab = tabId;
+        document.querySelectorAll('[data-tab-content]').forEach(el => {
+          el.classList.toggle('hidden', el.getAttribute('data-tab-content') !== tabId);
+        });
+        document.querySelectorAll('[data-tab-target]').forEach(btn => {
+          const isActive = btn.getAttribute('data-tab-target') === tabId;
+          btn.classList.toggle('text-blue-600', isActive);
+          btn.classList.toggle('border-blue-600', isActive && btn.classList.contains('border-b-2'));
+          btn.classList.toggle('text-slate-500', !isActive);
+          btn.classList.toggle('border-transparent', !isActive && btn.classList.contains('border-b-2'));
+        });
+
+        if (tabId === 'files') this.refreshSavedDocumentsList();
+        else if (tabId === 'settings') {
+          this.updateGDriveUI();
+          this.updateStorageStats();
+          this.renderCustomDocumentsListInSettings();
+        }
+        if (tabId !== 'scan') this.closeLiveCameraModal();
+        if (window.lucide) window.lucide.createIcons();
+      }
+
+      async handleImageFiles(fileList) {
+        if (!fileList || fileList.length === 0) return;
+        this.showLoadingOverlay('Processando foto(s)...');
+        try {
+          for (let i = 0; i < fileList.length; i++) {
+            const file = fileList[i];
+            if (!file.type.startsWith('image/')) continue;
+            const img = await window.imageProcessor.loadImage(file);
+            const processedCanvas = window.imageProcessor.processImage(img, 0, this.currentFilter);
+            this.currentPages.push({
+              id: 'page_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+              originalImg: img,
+              canvas: processedCanvas,
+              rotation: 0,
+              filter: this.currentFilter
+            });
+          }
+          this.renderPagesGallery();
+          this.updateWorkflowSteps();
+          this.showToast(`${fileList.length} foto(s) adicionada(s)!`, 'success');
+        } catch (err) {
+          this.showToast('Erro ao processar imagem.', 'error');
+        } finally {
+          this.hideLoadingOverlay();
+          const native = document.getElementById('native-camera-input');
+          if (native) native.value = '';
+          const upload = document.getElementById('file-upload-input');
+          if (upload) upload.value = '';
+        }
+      }
+
+      async openLiveCameraModal() {
+        const modal = document.getElementById('modal-live-camera');
+        const video = document.getElementById('camera-video-stream');
+        modal.classList.remove('hidden');
+
+        const result = await window.cameraController.startLiveCamera(video);
+        if (!result.success) {
+          modal.classList.add('hidden');
+          this.showToast('Acesso à câmera em tempo real indisponível. Usando seletor direto.', 'warning');
+          document.getElementById('native-camera-input')?.click();
+          return;
+        }
+        document.getElementById('btn-camera-torch')?.classList.toggle('hidden', !result.hasTorch);
+        this.updateCameraModalCounter();
+      }
+
+      closeLiveCameraModal() {
+        window.cameraController.stopCamera();
+        document.getElementById('modal-live-camera')?.classList.add('hidden');
+      }
+
+      captureLivePhoto() {
+        try {
+          const snapshotCanvas = window.cameraController.captureFrame();
+          const img = new Image();
+          img.onload = () => {
+            const processedCanvas = window.imageProcessor.processImage(img, 0, this.currentFilter);
+            this.currentPages.push({
+              id: 'page_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+              originalImg: img,
+              canvas: processedCanvas,
+              rotation: 0,
+              filter: this.currentFilter
+            });
+            this.renderPagesGallery();
+            this.updateWorkflowSteps();
+            this.updateCameraModalCounter();
+
+            const flash = document.getElementById('camera-flash-overlay');
+            if (flash) {
+              flash.classList.remove('opacity-0');
+              flash.classList.add('opacity-90');
+              setTimeout(() => { flash.classList.remove('opacity-90'); flash.classList.add('opacity-0'); }, 120);
+            }
+          };
+          img.src = snapshotCanvas.toDataURL('image/jpeg', 0.95);
+        } catch (err) {
+          this.showToast('Erro ao capturar foto.', 'error');
+        }
+      }
+
+      updateCameraModalCounter() {
+        const counter = document.getElementById('camera-shots-count');
+        if (counter) counter.textContent = `${this.currentPages.length} foto(s)`;
+      }
+
+      rotatePage(pageId) {
+        const page = this.currentPages.find(p => p.id === pageId);
+        if (!page) return;
+        page.rotation = (page.rotation + 90) % 360;
+        page.canvas = window.imageProcessor.processImage(page.originalImg, page.rotation, page.filter);
+        this.renderPagesGallery();
+      }
+
+      movePage(pageId, dir) {
+        const idx = this.currentPages.findIndex(p => p.id === pageId);
+        if (idx === -1) return;
+        const newIdx = idx + dir;
+        if (newIdx < 0 || newIdx >= this.currentPages.length) return;
+        const [moved] = this.currentPages.splice(idx, 1);
+        this.currentPages.splice(newIdx, 0, moved);
+        this.renderPagesGallery();
+      }
+
+      deletePage(pageId) {
+        this.currentPages = this.currentPages.filter(p => p.id !== pageId);
+        this.renderPagesGallery();
+        this.updateWorkflowSteps();
+        this.updateCameraModalCounter();
+      }
+
+      setFilterMode(filterMode) {
+        this.currentFilter = filterMode;
+        document.querySelectorAll('[data-filter-mode]').forEach(btn => {
+          const isActive = btn.getAttribute('data-filter-mode') === filterMode;
+          btn.classList.toggle('bg-blue-600', isActive);
+          btn.classList.toggle('text-white', isActive);
+          btn.classList.toggle('bg-slate-100', !isActive);
+          btn.classList.toggle('text-slate-700', !isActive);
+        });
+
+        this.currentPages.forEach(p => {
+          p.filter = filterMode;
+          p.canvas = window.imageProcessor.processImage(p.originalImg, p.rotation, p.filter);
+        });
+        this.renderPagesGallery();
+      }
+
+      renderPagesGallery() {
+        const container = document.getElementById('pages-gallery-container');
+        const emptyState = document.getElementById('gallery-empty-state');
+        const countBadge = document.getElementById('pages-count-badge');
+        const gallerySection = document.getElementById('gallery-section');
+        if (!container) return;
+
+        if (countBadge) countBadge.textContent = `${this.currentPages.length} página(s)`;
+        if (this.currentPages.length === 0) {
+          emptyState?.classList.remove('hidden');
+          container.innerHTML = '';
+          gallerySection?.classList.add('hidden');
+          return;
+        }
+
+        emptyState?.classList.add('hidden');
+        gallerySection?.classList.remove('hidden');
+
+        let html = '';
+        this.currentPages.forEach((page, idx) => {
+          const thumbUrl = window.imageProcessor.createThumbnail(page.canvas, 240);
+          const isFirst = idx === 0;
+          const isLast = idx === this.currentPages.length - 1;
+
+          html += `
+            <div class="page-thumbnail-card relative bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col group">
+              <div class="relative bg-slate-900 aspect-[3/4] flex items-center justify-center overflow-hidden">
+                <img src="${thumbUrl}" alt="Página ${idx + 1}" class="w-full h-full object-contain cursor-pointer" onclick="window.docScanApp.previewPageModal('${page.id}')" />
+                <span class="absolute top-2 left-2 bg-slate-900/80 backdrop-blur-sm text-white text-xs font-semibold px-2 py-0.5 rounded-full shadow">
+                  Pág. ${idx + 1}
+                </span>
+                <button onclick="window.docScanApp.deletePage('${page.id}')" title="Excluir página" class="absolute top-2 right-2 bg-rose-600/90 text-white p-1 rounded-full hover:bg-rose-700 shadow transition-all">
+                  <i data-lucide="trash-2" class="w-4 h-4"></i>
+                </button>
+              </div>
+
+              <div class="p-2 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-1 text-xs">
+                <button onclick="window.docScanApp.rotatePage('${page.id}')" title="Girar 90°" class="p-1.5 text-slate-700 hover:text-blue-600 hover:bg-slate-200 rounded transition flex items-center gap-1 font-medium">
+                  <i data-lucide="rotate-cw" class="w-3.5 h-3.5"></i> Girar
+                </button>
+                <div class="flex items-center gap-0.5">
+                  <button onclick="window.docScanApp.movePage('${page.id}', -1)" ${isFirst ? 'disabled class="p-1.5 text-slate-300 cursor-not-allowed"' : 'class="p-1.5 text-slate-700 hover:text-blue-600 hover:bg-slate-200 rounded transition"'} title="Mover para esquerda">
+                    <i data-lucide="chevron-left" class="w-4 h-4"></i>
+                  </button>
+                  <button onclick="window.docScanApp.movePage('${page.id}', 1)" ${isLast ? 'disabled class="p-1.5 text-slate-300 cursor-not-allowed"' : 'class="p-1.5 text-slate-700 hover:text-blue-600 hover:bg-slate-200 rounded transition"'} title="Mover para direita">
+                    <i data-lucide="chevron-right" class="w-4 h-4"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+          `;
+        });
+        container.innerHTML = html;
+        if (window.lucide) window.lucide.createIcons();
+      }
+
+      previewPageModal(pageId) {
+        const page = this.currentPages.find(p => p.id === pageId);
+        if (!page) return;
+        const modal = document.getElementById('modal-image-preview');
+        const imgEl = document.getElementById('image-preview-full');
+        imgEl.src = page.canvas.toDataURL('image/jpeg', 0.95);
+        modal.classList.remove('hidden');
+      }
+
+      closeImagePreviewModal() {
+        document.getElementById('modal-image-preview')?.classList.add('hidden');
+      }
+
+      renderCategoryOptions() {
+        const select = document.getElementById('select-category');
+        if (!select) return;
+        const categories = window.documentTypesManager.getAllCategories();
+        select.innerHTML = categories.map(c => `
+          <option value="${c.id}" ${c.id === this.selectedDocCategory ? 'selected' : ''}>${c.title}</option>
+        `).join('');
+        this.renderDocumentTypeOptions();
+      }
+
+      renderDocumentTypeOptions() {
+        const select = document.getElementById('select-doc-type');
+        if (!select) return;
+        const categories = window.documentTypesManager.getAllCategories();
+        const currentCat = categories.find(c => c.id === this.selectedDocCategory) || categories[0];
+
+        let optionsHtml = '';
+        currentCat.items.forEach((item, idx) => {
+          if (idx === 0 && !this.selectedDocItem) {
+            this.selectedDocItem = item;
+            this.docNumber = item.number;
+            this.docType = item.name;
+            const numInput = document.getElementById('input-doc-number');
+            if (numInput) numInput.value = this.docNumber;
+          }
+          optionsHtml += `<option value="${item.id}">${item.raw || item.name}</option>`;
+        });
+        optionsHtml += `<option value="__NEW__" class="text-blue-600 font-semibold bg-blue-50">➕ Adicionar Novo Tipo de Documento...</option>`;
+        select.innerHTML = optionsHtml;
+        if (currentCat.items.length > 0) this.handleDocTypeChange(currentCat.items[0].id);
+      }
+
+      handleDocTypeChange(itemId) {
+        const categories = window.documentTypesManager.getAllCategories();
+        let found = null;
+        for (const c of categories) {
+          const it = c.items.find(i => i.id === itemId);
+          if (it) { found = it; break; }
+        }
+        if (found) {
+          this.selectedDocItem = found;
+          this.docNumber = found.number || '1';
+          this.docType = found.name;
+          const numInput = document.getElementById('input-doc-number');
+          if (numInput) numInput.value = this.docNumber;
+          this.updateFilenamePreview();
+        }
+      }
+
+      getGeneratedFilename(includeExtension = true) {
+        const numInput = document.getElementById('input-doc-number');
+        const currentNumber = numInput ? numInput.value : this.docNumber;
+        return window.documentTypesManager.formatFilename(currentNumber, this.docType, this.userName, includeExtension);
+      }
+
+      updateFilenamePreview() {
+        const previewEl = document.getElementById('preview-filename-text');
+        if (previewEl) previewEl.textContent = this.getGeneratedFilename(true);
+      }
+
+      updateWorkflowSteps() {
+        const hasPhotos = this.currentPages.length > 0;
+        const step2 = document.getElementById('step-2-card');
+        const step3 = document.getElementById('step-3-card');
+        const btnGen = document.getElementById('btn-generate-pdf');
+
+        step2?.classList.toggle('opacity-50', !hasPhotos);
+        step2?.classList.toggle('pointer-events-none', !hasPhotos);
+        step3?.classList.toggle('opacity-50', !hasPhotos);
+        step3?.classList.toggle('pointer-events-none', !hasPhotos);
+        if (btnGen) btnGen.disabled = !hasPhotos;
+      }
+
+      async generateAndSavePDF() {
+        if (this.currentPages.length === 0) {
+          this.showToast('Capture ou selecione pelo menos uma foto antes.', 'warning');
+          return;
+        }
+        if (!this.userName || !this.userName.trim()) {
+          this.showToast('Por favor, informe o nome da pessoa/aluno.', 'warning');
+          document.getElementById('input-user-name')?.focus();
+          return;
+        }
+
+        const filename = this.getGeneratedFilename(true);
+        const currentNumber = document.getElementById('input-doc-number')?.value || this.docNumber;
+        this.showLoadingOverlay('Gerando documento PDF em alta resolução...', 0);
+
+        try {
+          const metadata = {
+            filename,
+            docNumber: currentNumber,
+            docType: this.docType,
+            userName: this.userName,
+            category: this.selectedDocCategory
+          };
+
+          const result = await window.pdfGenerator.generatePDF(this.currentPages, metadata, (pct) => {
+            this.updateLoadingProgress(pct);
+          });
+
+          const docRecord = {
+            id: 'doc_' + Date.now(),
+            filename,
+            docNumber: currentNumber,
+            docType: this.docType,
+            category: this.selectedDocCategory,
+            userName: window.documentTypesManager.sanitizeString(this.userName),
+            rawUserName: this.userName.trim(),
+            createdAt: new Date().toISOString(),
+            pageCount: result.pageCount,
+            fileSize: result.fileSize,
+            thumbnail: result.thumbnail,
+            pdfBlob: result.blob
+          };
+
+          await window.storageService.saveDocument(docRecord);
+          this.hideLoadingOverlay();
+          this.updateBadgeCount();
+          this.openSuccessSaveModal(docRecord);
+        } catch (err) {
+          this.hideLoadingOverlay();
+          this.showToast('Falha ao gerar e salvar o PDF: ' + err.message, 'error');
+        }
+      }
+
+      openSuccessSaveModal(docRecord) {
+        const modal = document.getElementById('modal-save-success');
+        document.getElementById('success-modal-filename').textContent = docRecord.filename;
+        document.getElementById('success-modal-details').textContent = `${docRecord.pageCount} página(s) • ${window.pdfGenerator.formatBytes(docRecord.fileSize)} • Salvo na aplicação`;
+
+        document.getElementById('btn-success-view').onclick = () => {
+          modal.classList.add('hidden');
+          this.viewDocument(docRecord.id);
+        };
+        document.getElementById('btn-success-download').onclick = () => this.downloadDocument(docRecord);
+        document.getElementById('btn-success-next-doc').onclick = () => {
+          modal.classList.add('hidden');
+          this.resetScanSession(false);
+          this.showToast(`Pronto para próximo documento de ${docRecord.rawUserName}`, 'info');
+        };
+        document.getElementById('btn-success-new-student').onclick = () => {
+          modal.classList.add('hidden');
+          this.resetScanSession(true);
+          this.showToast('Pronto para novo aluno!', 'info');
+        };
+        modal.classList.remove('hidden');
+      }
+
+      resetScanSession(clearStudent = false) {
+        this.currentPages = [];
+        this.renderPagesGallery();
+        this.updateWorkflowSteps();
+        if (clearStudent) {
+          this.userName = '';
+          const inp = document.getElementById('input-user-name');
+          if (inp) inp.value = '';
+          window.storageService.clearUserName();
+        }
+        this.updateFilenamePreview();
+      }
+
+      openAddCustomDocModal() {
+        const modal = document.getElementById('modal-add-custom-doc');
+        const cat = document.getElementById('modal-custom-category');
+        if (cat) cat.value = this.selectedDocCategory;
+        const inp = document.getElementById('input-custom-doc-text');
+        if (inp) inp.value = '';
+        modal.classList.remove('hidden');
+      }
+
+      closeAddCustomDocModal() {
+        document.getElementById('modal-add-custom-doc')?.classList.add('hidden');
+        if (this.selectedDocItem) {
+          const select = document.getElementById('select-doc-type');
+          if (select) select.value = this.selectedDocItem.id;
+        }
+      }
+
+      saveCustomDocumentItem() {
+        const catId = document.getElementById('modal-custom-category').value;
+        const text = document.getElementById('input-custom-doc-text').value.trim();
+        if (!text) { this.showToast('Informe o nome do documento.', 'warning'); return; }
+
+        const newItem = window.documentTypesManager.addCustomItem(catId, text);
+        this.closeAddCustomDocModal();
+        this.selectedDocCategory = catId;
+        this.renderCategoryOptions();
+        const select = document.getElementById('select-doc-type');
+        if (select) select.value = newItem.id;
+        this.handleDocTypeChange(newItem.id);
+        this.showToast(`Documento "${newItem.name}" adicionado!`, 'success');
+      }
+
+      async refreshSavedDocumentsList() {
+        this.savedDocuments = await window.storageService.getAllDocuments();
+        this.renderSavedDocumentsList();
+        this.updateBadgeCount();
+      }
+
+      renderSavedDocumentsList() {
+        const container = document.getElementById('saved-files-list');
+        const emptyState = document.getElementById('saved-files-empty');
+        const countHeader = document.getElementById('saved-files-header-count');
+        if (!container) return;
+
+        let filtered = this.savedDocuments.filter(doc => {
+          if (this.categoryFilter !== 'all' && doc.category !== this.categoryFilter) return false;
+          if (this.searchQuery) {
+            const q = this.searchQuery;
+            return doc.filename.toLowerCase().includes(q) ||
+              (doc.rawUserName || '').toLowerCase().includes(q) ||
+              (doc.docType || '').toLowerCase().includes(q);
+          }
+          return true;
+        });
+
+        if (countHeader) countHeader.textContent = `${filtered.length} documento(s) encontrado(s)`;
+        if (filtered.length === 0) {
+          container.innerHTML = '';
+          emptyState?.classList.remove('hidden');
+          this.updateBatchBarUI();
+          return;
+        }
+
+        emptyState?.classList.add('hidden');
+        let html = '';
+        filtered.forEach(doc => {
+          const isChecked = this.selectedDocIds.has(doc.id);
+          const formattedDate = new Date(doc.createdAt).toLocaleString('pt-BR', {
+            day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+          });
+          const formattedSize = window.pdfGenerator.formatBytes(doc.fileSize);
+
+          html += `
+            <div class="bg-white border ${isChecked ? 'border-blue-500 ring-2 ring-blue-100' : 'border-slate-200'} rounded-xl p-4 shadow-sm hover:shadow-md transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div class="flex items-start gap-3.5 flex-1 min-w-0">
+                <div class="pt-1">
+                  <input type="checkbox" onchange="window.docScanApp.toggleDocSelection('${doc.id}', this.checked)" ${isChecked ? 'checked' : ''} class="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer" />
+                </div>
+                <div class="w-12 h-16 bg-slate-100 border border-slate-200 rounded overflow-hidden flex-shrink-0 flex items-center justify-center cursor-pointer shadow-xs" onclick="window.docScanApp.viewDocument('${doc.id}')">
+                  ${doc.thumbnail ? `<img src="${doc.thumbnail}" alt="Thumbnail" class="w-full h-full object-cover" />` : `<i data-lucide="file-text" class="w-6 h-6 text-slate-400"></i>`}
+                </div>
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <h4 class="text-sm font-semibold text-slate-900 truncate font-mono" title="${doc.filename}">
+                      ${doc.filename}
+                    </h4>
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-700">
+                      ${this.getCategoryLabel(doc.category)}
+                    </span>
+                  </div>
+                  <div class="mt-1 flex items-center gap-3 text-xs text-slate-500 flex-wrap">
+                    <span class="flex items-center gap-1"><i data-lucide="user" class="w-3.5 h-3.5 text-slate-400"></i> ${doc.rawUserName || doc.userName}</span>
+                    <span class="flex items-center gap-1"><i data-lucide="layers" class="w-3.5 h-3.5 text-slate-400"></i> ${doc.pageCount} pág.</span>
+                    <span class="flex items-center gap-1"><i data-lucide="hard-drive" class="w-3.5 h-3.5 text-slate-400"></i> ${formattedSize}</span>
+                    <span class="flex items-center gap-1"><i data-lucide="calendar" class="w-3.5 h-3.5 text-slate-400"></i> ${formattedDate}</span>
+                  </div>
+                </div>
+              </div>
+              <div class="flex items-center gap-1.5 sm:self-center justify-end border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-100 flex-shrink-0">
+                <button onclick="window.docScanApp.viewDocument('${doc.id}')" title="Visualizar PDF" class="p-2 text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition">
+                  <i data-lucide="eye" class="w-4 h-4"></i>
+                </button>
+                <button onclick="window.docScanApp.openRenameModal('${doc.id}')" title="Renomear Arquivo" class="p-2 text-slate-600 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition">
+                  <i data-lucide="edit-3" class="w-4 h-4"></i>
+                </button>
+                <button onclick="window.docScanApp.downloadDocumentById('${doc.id}')" title="Baixar PDF" class="p-2 text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition">
+                  <i data-lucide="download" class="w-4 h-4"></i>
+                </button>
+                <button onclick="window.docScanApp.shareDocumentById('${doc.id}')" title="Compartilhar" class="p-2 text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition">
+                  <i data-lucide="share-2" class="w-4 h-4"></i>
+                </button>
+                <button onclick="window.docScanApp.confirmDeleteSingleDocument('${doc.id}')" title="Excluir" class="p-2 text-slate-600 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition">
+                  <i data-lucide="trash-2" class="w-4 h-4"></i>
+                </button>
+              </div>
+            </div>
+          `;
+        });
+        container.innerHTML = html;
+        this.updateBatchBarUI();
+        if (window.lucide) window.lucide.createIcons();
+      }
+
+      getCategoryLabel(c) {
+        if (c === 'matricula') return 'Matrícula';
+        if (c === 'reconsideracao') return 'Reconsideração';
+        if (c === 'aproveitamento') return 'Aproveitamento';
+        return 'Personalizado';
+      }
+
+      updateBadgeCount() {
+        document.querySelectorAll('.badge-saved-files-count').forEach(b => {
+          b.textContent = this.savedDocuments.length;
+          b.classList.toggle('hidden', this.savedDocuments.length === 0);
+        });
+      }
+
+      toggleDocSelection(id, chk) {
+        if (chk) this.selectedDocIds.add(id);
+        else this.selectedDocIds.delete(id);
+        this.updateBatchBarUI();
+      }
+
+      toggleSelectAll(chk) {
+        if (chk) this.savedDocuments.forEach(d => this.selectedDocIds.add(d.id));
+        else this.selectedDocIds.clear();
+        this.renderSavedDocumentsList();
+      }
+
+      clearSelection() {
+        this.selectedDocIds.clear();
+        const chk = document.getElementById('checkbox-select-all');
+        if (chk) chk.checked = false;
+        this.renderSavedDocumentsList();
+      }
+
+      updateBatchBarUI() {
+        const bar = document.getElementById('batch-action-bar');
+        const countEl = document.getElementById('batch-selected-count');
+        const count = this.selectedDocIds.size;
+        if (countEl) countEl.textContent = `${count} selecionado(s)`;
+        const chk = document.getElementById('checkbox-select-all');
+        if (chk) chk.checked = count > 0 && count === this.savedDocuments.length;
+        if (bar) {
+          if (count > 0) { bar.classList.remove('hidden'); bar.classList.add('batch-bar-enter'); }
+          else bar.classList.add('hidden');
+        }
+      }
+
+      async viewDocument(docId) {
+        const doc = await window.storageService.getDocumentById(docId);
+        if (!doc || !doc.pdfBlob) return;
+        this.currentViewDoc = doc;
+        document.getElementById('pdf-viewer-title').textContent = doc.filename;
+        const blobUrl = URL.createObjectURL(doc.pdfBlob);
+        document.getElementById('pdf-viewer-frame').src = blobUrl;
+        document.getElementById('btn-viewer-download').onclick = () => this.downloadDocument(doc);
+        document.getElementById('btn-viewer-share').onclick = () => this.shareDocument(doc);
+        document.getElementById('modal-pdf-viewer').classList.remove('hidden');
+      }
+
+      closePDFViewerModal() {
+        document.getElementById('pdf-viewer-frame').src = 'about:blank';
+        document.getElementById('modal-pdf-viewer')?.classList.add('hidden');
+        this.currentViewDoc = null;
+      }
+
+      downloadDocument(doc) {
+        const url = URL.createObjectURL(doc.pdfBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = doc.filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+        this.showToast(`Download de "${doc.filename}" iniciado.`, 'success');
+      }
+
+      async downloadDocumentById(docId) {
+        const doc = await window.storageService.getDocumentById(docId);
+        if (doc) this.downloadDocument(doc);
+      }
+
+      async shareDocument(doc) {
+        if (!doc?.pdfBlob) return;
+        const shared = await window.googleDriveService.shareFilesToDrive([{ filename: doc.filename, pdfBlob: doc.pdfBlob }]);
+        if (!shared) this.downloadDocument(doc);
+      }
+
+      async shareDocumentById(docId) {
+        const doc = await window.storageService.getDocumentById(docId);
+        if (doc) this.shareDocument(doc);
+      }
+
+      async openRenameModal(docId) {
+        const doc = await window.storageService.getDocumentById(docId);
+        if (!doc) return;
+        this.currentRenameDocId = docId;
+        const input = document.getElementById('input-rename-name');
+        input.value = doc.filename.replace(/\.pdf$/i, '');
+        document.getElementById('preview-rename-name').textContent = doc.filename;
+        document.getElementById('modal-rename-doc').classList.remove('hidden');
+        input.focus();
+      }
+
+      closeRenameModal() {
+        document.getElementById('modal-rename-doc')?.classList.add('hidden');
+        this.currentRenameDocId = null;
+      }
+
+      async saveRenameDocument() {
+        if (!this.currentRenameDocId) return;
+        const input = document.getElementById('input-rename-name');
+        const rawNewName = input.value.trim();
+        if (!rawNewName) { this.showToast('Informe o novo nome.', 'warning'); return; }
+
+        const cleanFilename = window.documentTypesManager.sanitizeCompleteFilename(rawNewName);
+        try {
+          await window.storageService.updateDocumentFilename(this.currentRenameDocId, cleanFilename);
+          this.closeRenameModal();
+          await this.refreshSavedDocumentsList();
+          this.showToast(`Arquivo renomeado para "${cleanFilename}"!`, 'success');
+        } catch (err) {
+          this.showToast('Erro ao renomear: ' + err.message, 'error');
+        }
+      }
+
+      async confirmDeleteSingleDocument(docId) {
+        const doc = this.savedDocuments.find(d => d.id === docId);
+        if (confirm(`Excluir permanentemente o arquivo:\n\n${doc?.filename || 'este documento'}?`)) {
+          await window.storageService.deleteDocument(docId);
+          this.selectedDocIds.delete(docId);
+          await this.refreshSavedDocumentsList();
+          this.showToast('Documento excluído.', 'info');
+        }
+      }
+
+      async confirmBatchDelete() {
+        const count = this.selectedDocIds.size;
+        if (count === 0) return;
+        if (confirm(`Deseja excluir permanentemente os ${count} documentos selecionados?`)) {
+          await window.storageService.deleteMultipleDocuments(Array.from(this.selectedDocIds));
+          this.selectedDocIds.clear();
+          await this.refreshSavedDocumentsList();
+          this.showToast(`${count} documento(s) excluído(s).`, 'info');
+        }
+      }
+
+      async downloadSelectedAsZip() {
+        const count = this.selectedDocIds.size;
+        if (count === 0) return;
+        if (!window.JSZip) { this.showToast('JSZip não carregado.', 'error'); return; }
+
+        this.showLoadingOverlay(`Compactando ${count} documento(s) em ZIP...`);
+        try {
+          const zip = new window.JSZip();
+          for (const id of Array.from(this.selectedDocIds)) {
+            const doc = await window.storageService.getDocumentById(id);
+            if (doc?.pdfBlob) zip.file(doc.filename, doc.pdfBlob);
+          }
+          const zipBlob = await zip.generateAsync({ type: 'blob' });
+          const url = URL.createObjectURL(zipBlob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `documentos_digitalizados_${Date.now()}.zip`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setTimeout(() => URL.revokeObjectURL(url), 2000);
+          this.showToast('Download do pacote ZIP concluído!', 'success');
+        } catch (err) {
+          this.showToast('Erro ao criar ZIP.', 'error');
+        } finally {
+          this.hideLoadingOverlay();
+        }
+      }
+
+      updateGDriveUI() {
+        const targetFolder = window.googleDriveService.getTargetFolder();
+        const input = document.getElementById('input-gdrive-folder');
+        const statusText = document.getElementById('gdrive-folder-status-text');
+        if (input) input.value = targetFolder;
+        if (statusText) {
+          statusText.innerHTML = targetFolder ?
+            `<span class="text-emerald-700 font-medium">Pasta ativa:</span> <code class="bg-emerald-100 text-emerald-900 px-1.5 py-0.5 rounded font-mono">${targetFolder}</code>` :
+            `<span class="text-slate-500">Nenhuma pasta informada. Os arquivos irão para a raiz ou pasta padrão.</span>`;
+        }
+        const cfg = window.googleDriveService.getConfig();
+        const ic = document.getElementById('input-gdrive-client-id');
+        const ik = document.getElementById('input-gdrive-api-key');
+        if (ic) ic.value = cfg.clientId;
+        if (ik) ik.value = cfg.apiKey;
+      }
+
+      async uploadSelectedToGDrive() {
+        const count = this.selectedDocIds.size;
+        if (count === 0) { this.showToast('Selecione pelo menos um documento.', 'warning'); return; }
+
+        const targetFolder = window.googleDriveService.getTargetFolder();
+        const config = window.googleDriveService.getConfig();
+        const filesToUpload = [];
+
+        for (const id of Array.from(this.selectedDocIds)) {
+          const doc = await window.storageService.getDocumentById(id);
+          if (doc?.pdfBlob) filesToUpload.push({ filename: doc.filename, pdfBlob: doc.pdfBlob });
+        }
+
+        if (config.clientId) {
+          this.showLoadingOverlay('Enviando para o Google Drive...', 0);
+          try {
+            const results = await window.googleDriveService.batchUpload(filesToUpload, targetFolder, (idx, total, name) => {
+              this.updateLoadingProgress(Math.round((idx / total) * 100), `Enviando ${idx} de ${total}: ${name}`);
+            });
+            this.hideLoadingOverlay();
+            const successCount = results.filter(r => r.success).length;
+            this.showToast(`${successCount} de ${filesToUpload.length} enviados com sucesso para o Drive!`, 'success');
+            return;
+          } catch (e) {
+            this.hideLoadingOverlay();
+          }
+        }
+        this.openGDriveDispatchModal(filesToUpload, targetFolder);
+      }
+
+      openGDriveDispatchModal(files, targetFolder) {
+        const modal = document.getElementById('modal-gdrive-dispatch');
+        document.getElementById('gdrive-dispatch-info').innerHTML = `
+          <p class="text-sm text-slate-600">Destino: <strong class="text-blue-700 font-mono">${targetFolder || 'Meu Drive'}</strong></p>
+          <p class="text-xs text-slate-500 mt-1">${files.length} arquivo(s) PDF prontos.</p>
+        `;
+        document.getElementById('gdrive-dispatch-filelist').innerHTML = files.map(f => `
+          <li class="text-xs font-mono text-slate-700 py-1 border-b border-slate-100 flex items-center justify-between">
+            <span class="truncate">${f.filename}</span>
+            <span class="text-slate-400 ml-2">${window.pdfGenerator.formatBytes(f.pdfBlob.size)}</span>
+          </li>
+        `).join('');
+
+        const btnShare = document.getElementById('btn-gdrive-native-share');
+        if (window.googleDriveService.canShareFiles()) {
+          btnShare.classList.remove('hidden');
+          btnShare.onclick = async () => {
+            modal.classList.add('hidden');
+            await window.googleDriveService.shareFilesToDrive(files);
+          };
+        } else {
+          btnShare.classList.add('hidden');
+        }
+
+        document.getElementById('btn-gdrive-open-web').onclick = () => window.open('https://drive.google.com/drive/my-drive', '_blank');
+        document.getElementById('btn-gdrive-download-bundle').onclick = () => {
+          modal.classList.add('hidden');
+          this.downloadSelectedAsZip();
+        };
+        modal.classList.remove('hidden');
+      }
+
+      closeGDriveDispatchModal() {
+        document.getElementById('modal-gdrive-dispatch')?.classList.add('hidden');
+      }
+
+      async updateStorageStats() {
+        const el = document.getElementById('storage-stats-info');
+        if (!el) return;
+        let totalBytes = 0;
+        this.savedDocuments.forEach(d => { totalBytes += (d.fileSize || 0); });
+        el.innerHTML = `
+          <div class="grid grid-cols-2 gap-4">
+            <div class="bg-slate-50 p-3 rounded-lg border border-slate-200">
+              <span class="text-xs text-slate-500 block">Total de Documentos</span>
+              <strong class="text-lg text-slate-800">${this.savedDocuments.length}</strong>
+            </div>
+            <div class="bg-slate-50 p-3 rounded-lg border border-slate-200">
+              <span class="text-xs text-slate-500 block">Espaço Utilizado</span>
+              <strong class="text-lg text-slate-800">${window.pdfGenerator.formatBytes(totalBytes)}</strong>
+            </div>
+          </div>
+        `;
+      }
+
+      renderCustomDocumentsListInSettings() {
+        const container = document.getElementById('custom-docs-settings-list');
+        if (!container) return;
+        const list = window.storageService.getCustomDocuments();
+        if (list.length === 0) {
+          container.innerHTML = `<p class="text-xs text-slate-400 italic">Nenhum item personalizado adicionado ainda.</p>`;
+          return;
+        }
+        container.innerHTML = list.map(item => `
+          <div class="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs">
+            <div>
+              <strong class="text-slate-800">${item.raw}</strong>
+              <span class="text-slate-400 block">Categoria: ${this.getCategoryLabel(item.categoryId)}</span>
+            </div>
+            <button onclick="window.docScanApp.removeCustomItem('${item.id}')" class="text-rose-600 hover:text-rose-800 p-1 rounded">
+              <i data-lucide="trash-2" class="w-4 h-4"></i>
+            </button>
+          </div>
+        `).join('');
+        if (window.lucide) window.lucide.createIcons();
+      }
+
+      removeCustomItem(itemId) {
+        if (confirm('Deseja remover este tipo de documento?')) {
+          window.storageService.removeCustomDocument(itemId);
+          this.renderCategoryOptions();
+          this.renderCustomDocumentsListInSettings();
+          this.showToast('Item removido.', 'info');
+        }
+      }
+
+      async exportAllDocumentsZip() {
+        if (this.savedDocuments.length === 0) {
+          this.showToast('Nenhum documento salvo para exportar.', 'warning');
+          return;
+        }
+        this.savedDocuments.forEach(d => this.selectedDocIds.add(d.id));
+        await this.downloadSelectedAsZip();
+      }
+
+      async confirmClearAllDocuments() {
+        if (this.savedDocuments.length === 0) return;
+        if (confirm('PERIGO: Esta ação apagará permanentemente TODOS os documentos salvos nesta aplicação.\n\nDeseja continuar?')) {
+          const ids = this.savedDocuments.map(d => d.id);
+          await window.storageService.deleteMultipleDocuments(ids);
+          this.selectedDocIds.clear();
+          await this.refreshSavedDocumentsList();
+          this.updateStorageStats();
+          this.showToast('Todos os documentos foram apagados.', 'info');
+        }
+      }
+
+      showLoadingOverlay(message, progress = null) {
+        const overlay = document.getElementById('global-loading-overlay');
+        const msgEl = document.getElementById('loading-overlay-message');
+        const barEl = document.getElementById('loading-overlay-progress-bar');
+        const pctEl = document.getElementById('loading-overlay-progress-text');
+        if (msgEl) msgEl.textContent = message;
+
+        if (progress !== null && barEl && pctEl) {
+          barEl.style.width = `${progress}%`;
+          pctEl.textContent = `${progress}%`;
+          pctEl.classList.remove('hidden');
+          barEl.parentElement.classList.remove('hidden');
+        } else if (barEl && pctEl) {
+          pctEl.classList.add('hidden');
+          barEl.parentElement.classList.add('hidden');
+        }
+        overlay?.classList.remove('hidden');
+      }
+
+      updateLoadingProgress(progress, customMessage = null) {
+        const barEl = document.getElementById('loading-overlay-progress-bar');
+        const pctEl = document.getElementById('loading-overlay-progress-text');
+        const msgEl = document.getElementById('loading-overlay-message');
+        if (barEl) barEl.style.width = `${progress}%`;
+        if (pctEl) pctEl.textContent = `${progress}%`;
+        if (customMessage && msgEl) msgEl.textContent = customMessage;
+      }
+
+      hideLoadingOverlay() {
+        document.getElementById('global-loading-overlay')?.classList.add('hidden');
+      }
+
+      showToast(message, type = 'info') {
+        const container = document.getElementById('toast-container');
+        if (!container) return;
+
+        const toast = document.createElement('div');
+        toast.className = `toast-enter flex items-center gap-2.5 px-4 py-3 rounded-xl shadow-lg text-sm font-medium border text-white transition-all pointer-events-auto ${
+          type === 'success' ? 'bg-emerald-600 border-emerald-500' :
+          type === 'error' ? 'bg-rose-600 border-rose-500' :
+          type === 'warning' ? 'bg-amber-600 border-amber-500' :
+          'bg-slate-800 border-slate-700'
+        }`;
+
+        let iconName = 'info';
+        if (type === 'success') iconName = 'check-circle-2';
+        if (type === 'error') iconName = 'alert-triangle';
+        if (type === 'warning') iconName = 'alert-circle';
+
+        toast.innerHTML = `<i data-lucide="${iconName}" class="w-5 h-5 flex-shrink-0"></i><span class="flex-1">${message}</span>`;
+        container.appendChild(toast);
+        if (window.lucide) window.lucide.createIcons();
+
+        setTimeout(() => {
+          toast.classList.remove('toast-enter');
+          toast.classList.add('toast-exit');
+          setTimeout(() => toast.remove(), 250);
+        }, 3500);
+      }
+    }
+
+    // Initialize Application
+    window.addEventListener('DOMContentLoaded', () => {
+      window.docScanApp = new DocScanApp();
+      window.docScanApp.init();
+    });
+  </script>
+
+</body>
+</html>
