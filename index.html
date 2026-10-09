@@ -84,13 +84,22 @@
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
-      width: 85%;
-      height: 75%;
-      max-width: 480px;
-      border: 2px dashed rgba(255, 255, 255, 0.7);
+      width: 82%;
+      max-width: 420px;
+      max-height: 80%;
+      aspect-ratio: 1 / 1.4142; /* Proporção exata da folha A4 em pé (Retrato) */
+      border: 2px solid rgba(59, 130, 246, 0.95);
       border-radius: 12px;
-      box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
+      box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.72); /* Escurece totalmente a área em volta da folha */
       pointer-events: none;
+      transition: all 0.25s ease-out;
+    }
+
+    .viewfinder-frame.orientation-landscape {
+      width: 90%;
+      max-width: 620px;
+      max-height: 75%;
+      aspect-ratio: 1.4142 / 1; /* Proporção da folha A4 deitada (Paisagem) */
     }
 
     .viewfinder-corner {
@@ -746,11 +755,14 @@
       </button>
 
       <div class="text-center">
-        <span class="text-xs font-semibold uppercase tracking-wider block">Alinhe o documento</span>
-        <span id="camera-shots-count" class="text-[11px] text-blue-400">0 foto(s) capturada(s)</span>
+        <span class="text-xs font-semibold uppercase tracking-wider block">Alinhe a folha na moldura</span>
+        <span class="text-[10px] text-blue-300 block">Apenas a área dentro da moldura será salva</span>
       </div>
 
       <div class="flex items-center gap-1">
+        <button id="btn-camera-orientation" title="Alternar formato da folha (Vertical / Horizontal)" class="p-2 rounded-full hover:bg-white/20 transition text-white">
+          <i data-lucide="rotate-cw" class="w-5 h-5"></i>
+        </button>
         <button id="btn-camera-torch" class="hidden p-2 rounded-full hover:bg-white/20 transition">
           <i data-lucide="zap" class="w-5 h-5"></i>
         </button>
@@ -762,10 +774,10 @@
 
     <!-- Live Stream Area with A4 Viewfinder -->
     <div class="relative flex-1 bg-black flex items-center justify-center overflow-hidden">
-      <video id="camera-video-stream" autoplay playsinline muted class="w-full h-full object-cover"></video>
+      <video id="camera-video-stream" autoplay playsinline muted class="w-full h-full object-contain"></video>
 
       <!-- A4 Document Guide Frame -->
-      <div class="viewfinder-frame">
+      <div id="viewfinder-frame" class="viewfinder-frame">
         <div class="viewfinder-corner tl"></div>
         <div class="viewfinder-corner tr"></div>
         <div class="viewfinder-corner bl"></div>
@@ -1507,14 +1519,73 @@
           await this.videoElement.play();
           this.isCameraActive = true;
 
+          // Ensure no CSS zoom / stretch is applied to the video element
+          this.videoElement.style.objectFit = 'contain';
+
+          // Reset hardware digital zoom if available
           const track = this.stream.getVideoTracks()[0];
           const capabilities = track.getCapabilities ? track.getCapabilities() : {};
           this.hasTorch = !!capabilities.torch;
+
+          if (capabilities.zoom && track.applyConstraints) {
+            try {
+              await track.applyConstraints({
+                advanced: [{ zoom: capabilities.zoom.min || 1 }]
+              });
+            } catch (e) {
+              console.warn('Could not reset zoom constraint:', e);
+            }
+          }
+
+          this.videoElement.onloadedmetadata = () => {
+            this.updateViewfinderBounds();
+          };
+          this.updateViewfinderBounds();
+
           return { success: true, hasTorch: this.hasTorch };
         } catch (err) {
           this.isCameraActive = false;
           return { success: false, error: err };
         }
+      }
+
+      updateViewfinderBounds() {
+        const video = this.videoElement;
+        const frame = document.getElementById('viewfinder-frame');
+        if (!video || !frame || !video.videoWidth || !video.videoHeight) return;
+
+        const rect = video.getBoundingClientRect();
+        if (!rect.width || !rect.height) return;
+
+        const vW = video.videoWidth;
+        const vH = video.videoHeight;
+        const videoRatio = vW / vH;
+        const elemRatio = rect.width / rect.height;
+
+        let rW, rH;
+        if (elemRatio > videoRatio) {
+          rH = rect.height;
+          rW = rect.height * videoRatio;
+        } else {
+          rW = rect.width;
+          rH = rect.width / videoRatio;
+        }
+
+        const isLandscape = frame.classList.contains('orientation-landscape');
+        const targetRatio = isLandscape ? 1.4142 : (1 / 1.4142);
+
+        const maxW = rW * 0.92;
+        const maxH = rH * 0.90;
+
+        let fW = maxW;
+        let fH = fW / targetRatio;
+        if (fH > maxH) {
+          fH = maxH;
+          fW = fH * targetRatio;
+        }
+
+        frame.style.width = `${Math.round(fW)}px`;
+        frame.style.height = `${Math.round(fH)}px`;
       }
 
       async switchCamera() {
@@ -1534,13 +1605,65 @@
         } catch (e) { return false; }
       }
 
-      captureFrame() {
+      captureFrame(viewfinderEl = null) {
         if (!this.videoElement || !this.isCameraActive) throw new Error('Câmera não ativa.');
+        const video = this.videoElement;
+        const vW = video.videoWidth;
+        const vH = video.videoHeight;
+        if (!vW || !vH) throw new Error('Dimensões do vídeo indisponíveis.');
+
         const canvas = document.createElement('canvas');
-        canvas.width = this.videoElement.videoWidth || 1280;
-        canvas.height = this.videoElement.videoHeight || 720;
         const ctx = canvas.getContext('2d');
-        ctx.drawImage(this.videoElement, 0, 0, canvas.width, canvas.height);
+
+        // If viewfinder element is provided, crop strictly what is shown inside the paper frame!
+        if (viewfinderEl) {
+          const videoRect = video.getBoundingClientRect();
+          const frameRect = viewfinderEl.getBoundingClientRect();
+
+          const videoRatio = vW / vH;
+          const elemRatio = videoRect.width / videoRect.height;
+
+          let rW, rH, rLeft, rTop;
+          if (elemRatio > videoRatio) {
+            rH = videoRect.height;
+            rW = videoRect.height * videoRatio;
+            rLeft = videoRect.left + (videoRect.width - rW) / 2;
+            rTop = videoRect.top;
+          } else {
+            rW = videoRect.width;
+            rH = videoRect.width / videoRatio;
+            rLeft = videoRect.left;
+            rTop = videoRect.top + (videoRect.height - rH) / 2;
+          }
+
+          const intersectLeft = Math.max(rLeft, frameRect.left);
+          const intersectTop = Math.max(rTop, frameRect.top);
+          const intersectRight = Math.min(rLeft + rW, frameRect.left + frameRect.width);
+          const intersectBottom = Math.min(rTop + rH, frameRect.top + frameRect.height);
+
+          const intersectW = Math.max(10, intersectRight - intersectLeft);
+          const intersectH = Math.max(10, intersectBottom - intersectTop);
+
+          const scale = vW / rW;
+          const cropX = Math.max(0, Math.min(vW - 1, (intersectLeft - rLeft) * scale));
+          const cropY = Math.max(0, Math.min(vH - 1, (intersectTop - rTop) * scale));
+          const cropW = Math.min(vW - cropX, intersectW * scale);
+          const cropH = Math.min(vH - cropY, intersectH * scale);
+
+          canvas.width = Math.round(cropW);
+          canvas.height = Math.round(cropH);
+
+          // Draw ONLY the area inside the viewfinder frame (excluding the surrounding table/room)
+          ctx.drawImage(
+            video,
+            Math.round(cropX), Math.round(cropY), Math.round(cropW), Math.round(cropH),
+            0, 0, canvas.width, canvas.height
+          );
+        } else {
+          canvas.width = vW;
+          canvas.height = vH;
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        }
         if (navigator.vibrate) navigator.vibrate(40);
         this.playShutterSound();
         return canvas;
@@ -1732,6 +1855,15 @@
           document.getElementById('btn-camera-torch').classList.toggle('text-amber-400', on);
         });
 
+        document.getElementById('btn-camera-orientation')?.addEventListener('click', () => {
+          const frame = document.getElementById('viewfinder-frame');
+          if (frame) {
+            const isLandscape = frame.classList.toggle('orientation-landscape');
+            window.cameraController.updateViewfinderBounds();
+            this.showToast(isLandscape ? 'Moldura: Modo Paisagem (Horizontal)' : 'Moldura: Modo Retrato (Vertical)', 'info');
+          }
+        });
+
         document.querySelectorAll('[data-filter-mode]').forEach(btn => {
           btn.addEventListener('click', (e) => this.setFilterMode(e.currentTarget.getAttribute('data-filter-mode')));
         });
@@ -1914,7 +2046,8 @@
 
       captureLivePhoto() {
         try {
-          const snapshotCanvas = window.cameraController.captureFrame();
+          const viewfinder = document.getElementById('viewfinder-frame');
+          const snapshotCanvas = window.cameraController.captureFrame(viewfinder);
           const img = new Image();
           img.onload = () => {
             const processedCanvas = window.imageProcessor.processImage(img, 0, this.currentFilter);
